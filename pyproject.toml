@@ -22,3 +22,9 @@ ignore = ["E501"]
 python_version = "3.13"
 strict = true
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# TitlesEndpoint has a method named `list` which mypy confuses with the builtin
+# `list` type in class body annotations, even with `from __future__ import annotations`.
+module = "imdbapi.endpoints.titles"
+disable_error_code = ["valid-type"]
