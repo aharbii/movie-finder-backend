@@ -1,0 +1,5 @@
+[tool.uv.workspace]
+members = ["imdbapi", "chain"]
+
+[tool.pytest.ini_options]
+norecursedirs = ["rag_ingestion"]
