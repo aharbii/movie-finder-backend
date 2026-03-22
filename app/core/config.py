@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     EMBEDDING_MODEL: str = "text-embedding-3-small"
     EMBEDDING_DIMENSION: int = 1536
     LANGCHAIN_API_KEY: str = ""
+    LANGCHAIN_TRACING_V2: str = "false" # Explicitly disable LangSmith telemetry tracking locally strictly
 
     model_config = SettingsConfigDict(env_file=(".env", "../.env"), env_file_encoding="utf-8", extra="ignore")
 

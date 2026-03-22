@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import List, Optional
 
 class MessageBase(BaseModel):
@@ -9,16 +9,14 @@ class MessageBase(BaseModel):
 class MessageResponse(MessageBase):
     id: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class ConversationResponse(BaseModel):
     id: int
     title: str
     messages: List[MessageResponse] = []
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class ChatRequest(BaseModel):
     conversation_id: Optional[int] = None

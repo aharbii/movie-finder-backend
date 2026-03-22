@@ -3,8 +3,8 @@ from app.core.config import settings
 
 def get_movie_metadata(title: str) -> dict:
     """Fetches real-time structured data including Poster URL from IMDBApi.dev."""
-    url = f"https://api.imdbapi.dev/v1/titles/search"
-    params = {"title": title}
+    url = f"https://api.imdbapi.dev/search/titles"
+    params = {"query": title}
     
     try:
         response = httpx.get(url, params=params, timeout=10.0)

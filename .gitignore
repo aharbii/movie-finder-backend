@@ -67,3 +67,6 @@ cover/
 # Qdrant/SQLite local DBs
 *.db
 sqlite3.db
+
+# Logs
+*.log

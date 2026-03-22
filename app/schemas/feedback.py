@@ -1,5 +1,4 @@
-from pydantic import BaseModel
-
+from pydantic import BaseModel, ConfigDict
 class FeedbackCreate(BaseModel):
     message_id: int
     movie_title: str
@@ -8,5 +7,4 @@ class FeedbackCreate(BaseModel):
 class FeedbackResponse(FeedbackCreate):
     id: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

@@ -1,4 +1,4 @@
-FROM python:3.11-slim AS production
+FROM python:3.11-slim AS builder
 
 WORKDIR /app
 
@@ -13,6 +13,9 @@ RUN uv sync --no-dev --no-group rag || uv sync --no-dev
 
 # Copy application source code
 COPY . /app
+
+# --- Production Stage ---
+FROM builder AS production
 
 # Non-root user for security compliance
 RUN groupadd -r appuser && useradd -r -g appuser appuser

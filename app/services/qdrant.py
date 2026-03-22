@@ -1,27 +1,24 @@
-import os
-from openai import OpenAI
-from qdrant_client import QdrantClient
-from app.core.config import settings
+from app.core.dependencies import get_qdrant_client, get_embeddings_model
+from app.core.logger import logger
 
 def get_movie_plots(query: str, limit: int = 5) -> list:
-    """Uses OpenAI embeddings to search Qdrant for semantic plot matches."""
+    """Uses unified Embeddings to search Qdrant for semantic plot matches securely."""
+    logger.info(f"Initiating generic Qdrant extraction querying for: '{query}'")
     
-    client = QdrantClient(url=settings.QDRANT_URL)
-    
-    if settings.OLLAMA_BASE_URL:
-        o_client = OpenAI(base_url=f"{settings.OLLAMA_BASE_URL.rstrip('/')}/v1", api_key="ollama")
-        embed_model = getattr(settings, "EMBEDDING_MODEL", "nomic-embed-text")
-    else:
-        o_client = OpenAI(api_key=settings.OPENAI_API_KEY)
-        embed_model = getattr(settings, "EMBEDDING_MODEL", "text-embedding-3-small")
+    try:
+        client = get_qdrant_client()
+        embeddings_model = get_embeddings_model()
         
-    response = o_client.embeddings.create(input=[query], model=embed_model)
-    vector = response.data[0].embedding
-    
-    search_results = client.search(
-        collection_name="movie_plots",
-        query_vector=vector,
-        limit=limit
-    )
-    
-    return [hit.payload for hit in search_results]
+        # Deploy generic LangChain wrapper natively
+        vector = embeddings_model.embed_query(query)
+        
+        search_results = client.query_points(
+            collection_name="movie_plots",
+            query=vector,
+            limit=limit
+        )
+        
+        return [hit.payload for hit in search_results.points]
+    except Exception as e:
+        logger.error(f"Semantic API Lookup aborted fatally unexpectedly: {e}")
+        return []
