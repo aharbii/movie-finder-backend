@@ -1,3 +1,6 @@
 [submodule "imdbapi"]
 	path = imdbapi
 	url = https://github.com/aharbii/imdbapi-client.git
+[submodule "rag_ingestion"]
+	path = rag_ingestion
+	url = https://github.com/aharbii/movie-finder-rag.git
