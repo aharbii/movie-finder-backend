@@ -374,16 +374,6 @@ dependencies = [
 ]
 
 [package.dev-dependencies]
-agents-anthropic = [
-    { name = "langchain-anthropic" },
-    { name = "langchain-core" },
-    { name = "langgraph" },
-]
-agents-openai = [
-    { name = "langchain-core" },
-    { name = "langchain-openai" },
-    { name = "langgraph" },
-]
 dev = [
     { name = "mypy" },
     { name = "pre-commit" },
@@ -414,16 +404,6 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
-agents-anthropic = [
-    { name = "langchain-anthropic", specifier = ">=0.3.0" },
-    { name = "langchain-core", specifier = ">=0.3.0" },
-    { name = "langgraph", specifier = ">=0.2.0" },
-]
-agents-openai = [
-    { name = "langchain-core", specifier = ">=0.3.0" },
-    { name = "langchain-openai", specifier = ">=0.3.0" },
-    { name = "langgraph", specifier = ">=0.2.0" },
-]
 dev = [
     { name = "mypy", specifier = ">=1.14.0" },
     { name = "pre-commit", specifier = ">=4.0.0" },
@@ -720,8 +700,19 @@ dev = [
     { name = "mypy" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
+    { name = "pytest-cov" },
     { name = "pytest-mock" },
     { name = "ruff" },
+]
+lint = [
+    { name = "mypy" },
+    { name = "ruff" },
+]
+test = [
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-cov" },
+    { name = "pytest-mock" },
 ]
 
 [package.metadata]
@@ -744,8 +735,19 @@ dev = [
     { name = "mypy", specifier = ">=1.14.0" },
     { name = "pytest", specifier = ">=8.3.0" },
     { name = "pytest-asyncio", specifier = ">=0.25.0" },
+    { name = "pytest-cov", specifier = ">=6.0.0" },
     { name = "pytest-mock", specifier = ">=3.14.0" },
     { name = "ruff", specifier = ">=0.9.0" },
+]
+lint = [
+    { name = "mypy", specifier = ">=1.14.0" },
+    { name = "ruff", specifier = ">=0.9.0" },
+]
+test = [
+    { name = "pytest", specifier = ">=8.3.0" },
+    { name = "pytest-asyncio", specifier = ">=0.25.0" },
+    { name = "pytest-cov", specifier = ">=6.0.0" },
+    { name = "pytest-mock", specifier = ">=3.14.0" },
 ]
 
 [[package]]

@@ -1,15 +1,33 @@
 # Python
-.venv
-.mypy_cache
-.pytest_cache
-.ruff_cache
-__pycache__
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Type checking & linting caches
+.mypy_cache/
+.ruff_cache/
+
+# Test & coverage
+.pytest_cache/
+.coverage
+coverage.xml
+test-results.xml
+htmlcov/
 
 # IDEs
-.vscode
+.vscode/
+.idea/
 
-# Secrets
+# Secrets — never commit
 .env
 
-# Caches
+# Logs
+logs/
 *.log
+
+# OS
+.DS_Store
+Thumbs.db
