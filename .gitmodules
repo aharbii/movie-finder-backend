@@ -1,0 +1,3 @@
+[submodule "imdbapi"]
+	path = imdbapi
+	url = https://github.com/aharbii/imdbapi-client.git
