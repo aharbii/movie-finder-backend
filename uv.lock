@@ -737,6 +737,7 @@ version = "0.1.0"
 source = { editable = "chain" }
 dependencies = [
     { name = "imdbapi-client" },
+    { name = "langchain" },
     { name = "langchain-anthropic" },
     { name = "langchain-core" },
     { name = "langchain-openai" },
@@ -772,6 +773,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "imdbapi-client", editable = "imdbapi" },
+    { name = "langchain", specifier = ">=1.2.13" },
     { name = "langchain-anthropic", specifier = ">=0.3.0" },
     { name = "langchain-core", specifier = ">=0.3.0" },
     { name = "langchain-openai", specifier = ">=0.3.0" },
