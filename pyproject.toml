@@ -3,3 +3,8 @@ members = ["imdbapi", "chain"]
 
 [tool.pytest.ini_options]
 norecursedirs = ["rag_ingestion"]
+filterwarnings = [
+    # langchain_core's pydantic-v1 shim is incompatible with Python 3.14+;
+    # this is a third-party issue unrelated to our code.
+    "ignore::UserWarning:langchain_core",
+]
