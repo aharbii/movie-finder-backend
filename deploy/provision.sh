@@ -179,7 +179,22 @@ az keyvault create \
     --sku            standard \
     --output         none
 KV_URI="https://${KV_NAME}.vault.azure.net"
+KV_ID="$(az keyvault show --name "$KV_NAME" --resource-group "$RG" --query id -o tsv)"
 echo "    ✓ $KV_NAME ($KV_URI)"
+
+# Key Vault uses Azure RBAC by default — the creator has no automatic secret
+# access. Grant "Key Vault Secrets Officer" to the current CLI user, then wait
+# for RBAC propagation before writing secrets.
+echo "    Granting Key Vault Secrets Officer to current user..."
+CURRENT_USER_OID="$(az ad signed-in-user show --query id -o tsv)"
+az role assignment create \
+    --assignee-object-id      "$CURRENT_USER_OID" \
+    --assignee-principal-type User \
+    --role                    "Key Vault Secrets Officer" \
+    --scope                   "$KV_ID" \
+    --output                  none 2>/dev/null || true
+echo "    Waiting 30 s for RBAC propagation..."
+sleep 30
 
 echo "    Storing secrets..."
 az keyvault secret set --vault-name "$KV_NAME" --name "APP-SECRET-KEY"    --value "$APP_SECRET_KEY"    --output none
