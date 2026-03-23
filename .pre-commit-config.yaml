@@ -24,6 +24,7 @@ repos:
         additional_dependencies:
           - pydantic
           - pydantic-settings
+          - fastapi
         args:
           - --check-untyped-defs
           - --disallow-untyped-defs
@@ -31,7 +32,7 @@ repos:
           - --warn-return-any
           - --warn-unused-ignores
           - --show-error-codes
-        exclude: ^tests/
+        exclude: (^tests/|/tests/|conftest\.py$)
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.14.13

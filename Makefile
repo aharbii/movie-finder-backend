@@ -9,16 +9,16 @@
 # =============================================================================
 
 .PHONY: help setup check lint lint-fix type-check \
-        test test-chain test-imdbapi test-rag test-all \
+        test test-chain test-imdbapi test-app test-rag test-all \
+        run-dev \
         docker-up docker-down docker-chain docker-rag \
         submodules clean
 
 # Default target
 .DEFAULT_GOAL := help
 
-WORKSPACE_PKGS := chain/src imdbapi/src
-WORKSPACE_TESTS := chain/tests imdbapi/tests
-RAG_DIR        := rag_ingestion
+WORKSPACE_PKGS  := chain/src imdbapi/src app/src rag_ingestion/src
+WORKSPACE_TESTS := chain/tests imdbapi/tests app/tests rag_ingestion/tests
 
 # --------------------------------------------------------------------------- #
 # Help
@@ -32,6 +32,7 @@ help:
 	@echo "  Setup"
 	@echo "    setup          First-time dev setup (deps + pre-commit + .env)"
 	@echo "    submodules     Pull latest from all submodule remotes"
+	@echo "    run-dev        Start FastAPI dev server with hot-reload"
 	@echo ""
 	@echo "  Code quality"
 	@echo "    lint           ruff check + format check (chain + imdbapi)"
@@ -40,17 +41,16 @@ help:
 	@echo "    check          Quick smoke test: imports + lint (no network)"
 	@echo ""
 	@echo "  Testing"
-	@echo "    test           pytest — chain + imdbapi"
+	@echo "    test           pytest — all projects"
 	@echo "    test-chain     pytest — chain only"
 	@echo "    test-imdbapi   pytest — imdbapi only"
+	@echo "    test-app       pytest — app only"
 	@echo "    test-rag       pytest — rag_ingestion only"
-	@echo "    test-all       pytest — all three projects"
 	@echo ""
 	@echo "  Docker"
 	@echo "    docker-up      Start full stack (app + Qdrant)"
 	@echo "    docker-down    Stop full stack"
 	@echo "    docker-chain   Start chain dev stack (chain + Qdrant)"
-	@echo "    docker-rag     Start rag_ingestion Qdrant only"
 	@echo ""
 	@echo "  Maintenance"
 	@echo "    clean          Remove __pycache__, .pytest_cache, .mypy_cache, egg-info"
@@ -108,9 +108,18 @@ check:
 	@echo ">>> Checking workspace imports..."
 	uv run python -c "from chain import compile_graph; print('  chain OK')"
 	uv run python -c "from imdbapi import IMDBAPIClient; print('  imdbapi OK')"
+	uv run python -c "from app.main import app; print('  app OK')"
 	@echo ">>> Running lint..."
 	@$(MAKE) lint
 	@echo ">>> All checks passed."
+
+# --------------------------------------------------------------------------- #
+# Dev server
+# --------------------------------------------------------------------------- #
+
+run-dev:
+	uv sync --group dev --quiet
+	uv run fastapi dev app/src/app/main.py --port $${APP_PORT:-8000}
 
 # --------------------------------------------------------------------------- #
 # Testing
@@ -128,12 +137,13 @@ test-imdbapi:
 	uv sync --frozen --group test --quiet
 	uv run pytest imdbapi/tests/ -v --tb=short
 
-test-rag:
-	cd $(RAG_DIR) && \
-	uv sync --frozen --group test --quiet && \
-	PYTHONPATH=src uv run pytest tests/ -v --tb=short
+test-app:
+	uv sync --frozen --group test --quiet
+	uv run pytest app/tests/ -v --tb=short
 
-test-all: test test-rag
+test-rag:
+	uv sync --frozen --group test --quiet
+	uv run pytest rag_ingestion/tests/ -v --tb=short
 
 # --------------------------------------------------------------------------- #
 # Docker
@@ -151,11 +161,6 @@ docker-down:
 docker-chain:
 	cd chain && docker compose up -d
 	@echo "Chain dev stack started."
-	@echo "  Qdrant:  http://localhost:6333"
-
-docker-rag:
-	cd $(RAG_DIR) && docker compose up qdrant -d
-	@echo "Qdrant started for rag_ingestion."
 	@echo "  Qdrant:  http://localhost:6333"
 
 # --------------------------------------------------------------------------- #

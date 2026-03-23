@@ -42,7 +42,6 @@ services:
 
   # ---------------------------------------------------------------------------
   # App — FastAPI application
-  # TODO: Uncomment and complete when app/ is implemented.
   # ---------------------------------------------------------------------------
   app:
     build:
@@ -61,12 +60,11 @@ services:
     depends_on:
       qdrant:
         condition: service_healthy
-    # Live-reload mount — uncomment when app/ source exists:
-    # develop:
-    #   watch:
-    #     - action: sync
-    #       path: ./app
-    #       target: /app/src
+    develop:
+      watch:
+        - action: sync
+          path: ./app/src
+          target: /app/src
     restart: unless-stopped
 
 volumes:

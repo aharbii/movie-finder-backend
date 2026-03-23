@@ -1,11 +1,13 @@
 # =============================================================================
-# movie-finder backend — FastAPI application Dockerfile
+# movie-finder backend — FastAPI application
 #
-# Status: PLACEHOLDER — app/ is not yet implemented.
-# This file will be completed when the FastAPI layer is built.
+# Build context: backend/  (workspace root)
+# All workspace members (chain, imdbapi, app) are installed together.
 #
-# Planned build context: backend/  (workspace root)
-# The workspace members (chain, imdbapi) are installed together.
+# Build:
+#   docker build -t movie-finder-app .
+# Run:
+#   docker run --env-file .env -p 8000:8000 movie-finder-app
 # =============================================================================
 
 # ---- Stage 1: builder -------------------------------------------------------
@@ -16,31 +18,46 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 WORKDIR /build
 
-# TODO: Copy workspace pyproject + lock file + all workspace members
-# COPY pyproject.toml uv.lock ./
-# COPY chain/ ./chain/
-# COPY imdbapi/ ./imdbapi/
-# COPY app/ ./app/
-# RUN --mount=type=cache,target=/root/.cache/uv \
-#     uv sync --frozen --no-dev --all-packages
+# Copy workspace manifests and lock file first for layer caching
+COPY pyproject.toml uv.lock ./
+COPY chain/pyproject.toml ./chain/
+COPY imdbapi/pyproject.toml ./imdbapi/
+COPY app/pyproject.toml ./app/
+
+# Install all workspace packages (no dev deps) into an isolated venv
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev --all-packages
+
+# Copy actual source after deps are cached
+COPY chain/src ./chain/src
+COPY imdbapi/src ./imdbapi/src
+COPY app/src ./app/src
+
 
 # ---- Stage 2: runtime -------------------------------------------------------
 FROM python:3.13-slim AS runtime
 
 LABEL org.opencontainers.image.title="movie-finder-backend"
-LABEL org.opencontainers.image.description="Movie Finder — FastAPI application (placeholder)"
+LABEL org.opencontainers.image.description="Movie Finder — FastAPI + LangGraph"
 
 RUN useradd --system --uid 1001 --no-create-home appuser
 
 WORKDIR /app
 
-# TODO: Copy venv and app source once app/ is implemented
-# COPY --from=builder /build/.venv /app/.venv
-# COPY app/src/ src/
+# Copy only the pre-built venv and source tree from the builder
+COPY --from=builder /build/.venv /app/.venv
+COPY --from=builder /build/app/src ./src
+COPY --from=builder /build/chain/src ./chain_src
+COPY --from=builder /build/imdbapi/src ./imdbapi_src
 
 ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1
+    PYTHONDONTWRITEBYTECODE=1 \
+    PATH="/app/.venv/bin:$PATH"
 
-# TODO: Replace with: CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+USER appuser
+
 EXPOSE 8000
-CMD ["python", "-c", "print('FastAPI app not yet implemented. See app/README.md.')"]
+
+CMD ["python", "-m", "uvicorn", "app.main:app", \
+     "--host", "0.0.0.0", "--port", "8000", \
+     "--workers", "1"]
