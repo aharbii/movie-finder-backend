@@ -18,9 +18,9 @@
 #       QDRANT_ENDPOINT     QDRANT_API_KEY
 #       APP_SECRET_KEY      PG_ADMIN_PASSWORD
 #
-# What this script creates (10 steps):
-#   Resource Group, Container Registry, Key Vault (5 secrets),
-#   Azure Database for PostgreSQL Flexible Server,
+# What this script creates (11 steps):
+#   Resource provider registration, Resource Group, Container Registry,
+#   Key Vault (6 secrets), Azure Database for PostgreSQL Flexible Server,
 #   Log Analytics Workspace, Container Apps Environment,
 #   User-Assigned Managed Identity (AcrPull + Key Vault),
 #   Container App (first deploy), Service Principal for Jenkins CI/CD.
@@ -89,14 +89,16 @@ else
     PG_SKU="Standard_B1ms"
 fi
 
-# Runtime secrets — read from environment or prompt if not set
+# Runtime secrets — read from environment or prompt if not set.
+# Prompt and post-input newline go to /dev/tty so they reach the terminal
+# even when this function is called inside a command-substitution expression.
 get_secret() {
     local var_name="$1"
     local prompt_text="$2"
     local value="${!var_name:-}"
     if [[ -z "$value" ]]; then
-        read -r -s -p "Enter $prompt_text: " value
-        echo ""
+        read -r -s -p $'\n'"Enter $prompt_text: " value </dev/tty
+        echo "" >/dev/tty
     fi
     echo "$value"
 }
@@ -118,10 +120,32 @@ read -r -p "Proceed? [y/N] " confirm
 echo ""
 
 # --------------------------------------------------------------------------- #
-# 3. Resource Group
+# 3. Azure resource provider registration
 # --------------------------------------------------------------------------- #
 
-echo ">>> [1/10] Creating resource group..."
+echo ">>> [1/11] Registering Azure resource providers..."
+_register_provider() {
+    local ns="$1"
+    local state
+    state="$(az provider show --namespace "$ns" --query registrationState -o tsv 2>/dev/null || echo "NotRegistered")"
+    if [[ "$state" != "Registered" ]]; then
+        echo "    Registering $ns (waiting for activation)..."
+        az provider register --namespace "$ns" --wait --output none
+    fi
+    echo "    ✓ $ns"
+}
+_register_provider Microsoft.ContainerRegistry
+_register_provider Microsoft.KeyVault
+_register_provider Microsoft.DBforPostgreSQL
+_register_provider Microsoft.OperationalInsights
+_register_provider Microsoft.App
+_register_provider Microsoft.ManagedIdentity
+
+# --------------------------------------------------------------------------- #
+# 4. Resource Group
+# --------------------------------------------------------------------------- #
+
+echo ">>> [2/11] Creating resource group..."
 az group create \
     --name     "$RG" \
     --location "$LOCATION" \
@@ -129,10 +153,10 @@ az group create \
 echo "    ✓ $RG"
 
 # --------------------------------------------------------------------------- #
-# 4. Azure Container Registry
+# 5. Azure Container Registry
 # --------------------------------------------------------------------------- #
 
-echo ">>> [2/10] Creating Azure Container Registry..."
+echo ">>> [3/11] Creating Azure Container Registry..."
 az acr create \
     --name           "$ACR_NAME" \
     --resource-group "$RG" \
@@ -147,7 +171,7 @@ echo "    ✓ $ACR_SERVER"
 # 5. Key Vault  (DATABASE_URL stored after PostgreSQL is provisioned below)
 # --------------------------------------------------------------------------- #
 
-echo ">>> [3/10] Creating Key Vault..."
+echo ">>> [4/11] Creating Key Vault..."
 az keyvault create \
     --name           "$KV_NAME" \
     --resource-group "$RG" \
@@ -169,7 +193,7 @@ echo "    ✓ 5 secrets stored (DATABASE-URL will be added after PostgreSQL is r
 # 6. Azure Database for PostgreSQL Flexible Server
 # --------------------------------------------------------------------------- #
 
-echo ">>> [4/10] Creating Azure Database for PostgreSQL Flexible Server..."
+echo ">>> [5/11] Creating Azure Database for PostgreSQL Flexible Server..."
 echo "    SKU: $PG_SKU  (Burstable tier — adjust in Variables section for higher load)"
 
 az postgres flexible-server create \
@@ -200,7 +224,7 @@ echo "    ✓ DATABASE-URL stored in Key Vault"
 # 7. Log Analytics Workspace (required by Container Apps Environment)
 # --------------------------------------------------------------------------- #
 
-echo ">>> [5/10] Creating Log Analytics Workspace..."
+echo ">>> [6/11] Creating Log Analytics Workspace..."
 az monitor log-analytics workspace create \
     --workspace-name "$LOG_ANALYTICS" \
     --resource-group "$RG" \
@@ -221,7 +245,7 @@ echo "    ✓ $LOG_ANALYTICS"
 # 8. User-Assigned Managed Identity
 # --------------------------------------------------------------------------- #
 
-echo ">>> [6/10] Creating Managed Identity..."
+echo ">>> [7/11] Creating Managed Identity..."
 az identity create \
     --name           "$IDENTITY_NAME" \
     --resource-group "$RG" \
@@ -262,7 +286,7 @@ echo "    ✓ $IDENTITY_NAME (AcrPull + Key Vault get/list)"
 # 9. Container Apps Environment
 # --------------------------------------------------------------------------- #
 
-echo ">>> [7/10] Creating Container Apps Environment..."
+echo ">>> [8/11] Creating Container Apps Environment..."
 az containerapp env create \
     --name                              "$ACA_ENV_NAME" \
     --resource-group                    "$RG" \
@@ -276,7 +300,7 @@ echo "    ✓ $ACA_ENV_NAME"
 # 10. Container App (initial provision with placeholder image)
 # --------------------------------------------------------------------------- #
 
-echo ">>> [8/10] Creating Container App..."
+echo ">>> [9/11] Creating Container App..."
 
 ACA_ENV_ID="$(az containerapp env show \
     --name           "$ACA_ENV_NAME" \
@@ -390,7 +414,7 @@ echo "    URL: https://$APP_FQDN"
 # 11. Service Principal for Jenkins CI/CD
 # --------------------------------------------------------------------------- #
 
-echo ">>> [9/10] Creating Jenkins CI/CD Service Principal..."
+echo ">>> [10/11] Creating Jenkins CI/CD Service Principal..."
 
 RG_ID="$(az group show --name "$RG" --query id -o tsv)"
 
@@ -456,7 +480,7 @@ fi
 # 12. Remaining Jenkins credentials (resource names, no secrets)
 # --------------------------------------------------------------------------- #
 
-echo ">>> [10/10] Additional Jenkins credentials to add..."
+echo ">>> [11/11] Additional Jenkins credentials to add..."
 echo ""
 echo "    ID: aca-rg                  Type: Secret Text"
 echo "        Value: $RG"
