@@ -28,3 +28,10 @@ ignore_missing_imports = true
 # `list` type in class body annotations, even with `from __future__ import annotations`.
 module = "imdbapi.endpoints.titles"
 disable_error_code = ["valid-type"]
+
+[[tool.mypy.overrides]]
+# langchain_anthropic stubs require `timeout` and `stop` as positional args in
+# one overload; at runtime these are optional kwargs. Suppress the false positive
+# across all chain nodes and imdbapi agent that instantiate ChatAnthropic.
+module = ["chain.nodes.*", "imdbapi.langchain.agent"]
+disable_error_code = ["call-arg"]
