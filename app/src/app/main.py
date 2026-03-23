@@ -29,10 +29,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("Starting Movie Finder API [env=%s port=%d]", cfg.app_env, cfg.app_port)
 
     # --- Session store ---
-    store = SessionStore(cfg.sqlite_path)
+    store = SessionStore(cfg.database_url)
     await store.connect()
     set_store(store)
-    logger.info("Session store ready: %s", cfg.sqlite_path)
+    logger.info("Session store ready (PostgreSQL)")
 
     # --- LangGraph (singleton per process) ---
     graph = compile_graph()

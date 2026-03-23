@@ -1,7 +1,9 @@
 """Shared fixtures for the app test suite.
 
 Design:
-- SessionStore uses SQLite :memory: — fresh DB per test, no disk I/O.
+- SessionStore uses a real PostgreSQL database for unit tests.
+  Set DATABASE_URL to point at a test database (tables are truncated
+  between tests for isolation).  Default: postgresql://postgres:postgres@localhost:5432/movie_finder_test # pragma: allowlist secret
 - LangGraph is fully mocked; no chain or LLM configuration is needed.
 - FastAPI's lifespan is replaced with a no-op so compile_graph() is never
   called (avoids requiring QDRANT_ENDPOINT / ANTHROPIC_API_KEY in tests).
@@ -20,9 +22,12 @@ import httpx
 import pytest
 from langchain_core.messages import AIMessage
 
-# Set APP_SECRET_KEY before any app module is imported so AppConfig passes
-# validation without a .env file entry.
+# Set required env vars before any app module is imported.
 os.environ.setdefault("APP_SECRET_KEY", "test-secret-key-for-pytest-only-1234567890abc")
+os.environ.setdefault(
+    "DATABASE_URL",
+    "postgresql://postgres:postgres@localhost:5432/movie_finder_test",  # pragma: allowlist secret
+)
 
 
 # ---------------------------------------------------------------------------
@@ -40,7 +45,7 @@ def _reset_config_cache() -> AsyncGenerator[None]:
 
 
 # ---------------------------------------------------------------------------
-# In-memory session store
+# PostgreSQL session store — fresh (truncated) state per test
 # ---------------------------------------------------------------------------
 
 
@@ -48,8 +53,15 @@ def _reset_config_cache() -> AsyncGenerator[None]:
 async def store() -> AsyncGenerator[Any]:
     from app.session.store import SessionStore
 
-    s = SessionStore(":memory:")
+    db_url = os.environ["DATABASE_URL"]
+    s = SessionStore(db_url)
     await s.connect()
+
+    # Truncate all tables so each test starts with an empty database.
+    # CASCADE handles the FK order automatically.
+    async with s._p.acquire() as conn:
+        await conn.execute("TRUNCATE messages, sessions, users RESTART IDENTITY CASCADE")
+
     yield s
     await s.close()
 

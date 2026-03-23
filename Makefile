@@ -6,12 +6,19 @@
 #
 # All Python commands run through uv to ensure the correct environment.
 # Targets that need the workspace venv call `uv sync` before running.
+#
+# Local database (standalone — no full-stack compose needed):
+#   make db-start    Start a local PostgreSQL container  (port 5432)
+#   make db-stop     Stop and remove it
+#   make db-reset    Wipe data and restart (clean slate)
+#   make db-migrate  Migrate existing SQLite dev data into PostgreSQL
 # =============================================================================
 
 .PHONY: help setup check lint lint-fix type-check \
         test test-ci test-chain test-imdbapi test-app test-rag test-all \
         run-dev \
-        docker-up docker-down docker-chain docker-rag \
+        db-start db-stop db-reset db-migrate \
+        docker-up docker-down \
         submodules clean
 
 # Default target
@@ -19,6 +26,14 @@
 
 WORKSPACE_PKGS  := chain/src imdbapi/src app/src rag_ingestion/src
 WORKSPACE_TESTS := chain/tests imdbapi/tests app/tests rag_ingestion/tests
+
+# Local postgres container defaults (override via env or .env)
+DB_CONTAINER  ?= movie-finder-db
+DB_NAME       ?= movie_finder
+DB_USER       ?= movie_finder
+DB_PASSWORD   ?= devpassword
+DB_PORT       ?= 5432
+DATABASE_URL  ?= postgresql://$(DB_USER):$(DB_PASSWORD)@localhost:$(DB_PORT)/$(DB_NAME)
 
 # --------------------------------------------------------------------------- #
 # Help
@@ -34,10 +49,16 @@ help:
 	@echo "    submodules     Pull latest from all submodule remotes"
 	@echo "    run-dev        Start FastAPI dev server with hot-reload"
 	@echo ""
+	@echo "  Local database (standalone — no full-stack compose needed)"
+	@echo "    db-start       Start a local PostgreSQL container (port $(DB_PORT))"
+	@echo "    db-stop        Stop and remove the local PostgreSQL container"
+	@echo "    db-reset       Wipe data and restart (fresh empty database)"
+	@echo "    db-migrate     Migrate existing SQLite dev data → PostgreSQL"
+	@echo ""
 	@echo "  Code quality"
-	@echo "    lint           ruff check + format check (chain + imdbapi)"
-	@echo "    lint-fix       ruff auto-fix + format (chain + imdbapi)"
-	@echo "    type-check     mypy only (chain + imdbapi)"
+	@echo "    lint           ruff check + format check"
+	@echo "    lint-fix       ruff auto-fix + format"
+	@echo "    type-check     mypy"
 	@echo "    check          Quick smoke test: imports + lint (no network)"
 	@echo ""
 	@echo "  Testing"
@@ -45,13 +66,12 @@ help:
 	@echo "    test-ci        pytest — all projects, JUnit XML → test-results/"
 	@echo "    test-chain     pytest — chain only"
 	@echo "    test-imdbapi   pytest — imdbapi only"
-	@echo "    test-app       pytest — app only"
+	@echo "    test-app       pytest — app only  (requires db-start)"
 	@echo "    test-rag       pytest — rag_ingestion only"
 	@echo ""
-	@echo "  Docker"
-	@echo "    docker-up      Start full stack (app + Qdrant)"
+	@echo "  Full-stack Docker (from repo root, not here)"
+	@echo "    docker-up      Start full stack via root docker-compose.yml"
 	@echo "    docker-down    Stop full stack"
-	@echo "    docker-chain   Start chain dev stack (chain + Qdrant)"
 	@echo ""
 	@echo "  Maintenance"
 	@echo "    clean          Remove __pycache__, .pytest_cache, .mypy_cache, egg-info"
@@ -73,6 +93,7 @@ setup:
 		echo ""; \
 		echo "  .env created from .env.example."; \
 		echo "  Fill in your API keys before running the application."; \
+		echo "  Then run: make db-start  (starts local PostgreSQL)"; \
 		echo ""; \
 	else \
 		echo "  .env already exists — skipping copy."; \
@@ -80,12 +101,47 @@ setup:
 	@echo ""
 	@echo "Setup complete. Next steps:"
 	@echo "  1. Edit .env with your API keys"
-	@echo "  2. make docker-up    (start local stack)"
-	@echo "  3. make check        (verify everything works)"
+	@echo "  2. make db-start     (start local PostgreSQL)"
+	@echo "  3. make run-dev      (start FastAPI dev server)"
+	@echo "  4. make check        (verify everything works)"
 	@echo ""
 
 submodules:
 	git submodule update --remote --merge
+
+# --------------------------------------------------------------------------- #
+# Local PostgreSQL (standalone backend dev — no full-stack compose needed)
+# --------------------------------------------------------------------------- #
+
+db-start:
+	@echo ">>> Starting local PostgreSQL container ($(DB_CONTAINER))..."
+	docker run -d \
+		--name $(DB_CONTAINER) \
+		-p $(DB_PORT):5432 \
+		-e POSTGRES_DB=$(DB_NAME) \
+		-e POSTGRES_USER=$(DB_USER) \
+		-e POSTGRES_PASSWORD=$(DB_PASSWORD) \
+		postgres:16-alpine
+	@echo ""
+	@echo "  PostgreSQL running at localhost:$(DB_PORT)"
+	@echo "  DATABASE_URL: postgresql://$(DB_USER):$(DB_PASSWORD)@localhost:$(DB_PORT)/$(DB_NAME)"
+	@echo ""
+	@echo "  Set this in your .env file as DATABASE_URL, then run: make run-dev"
+	@echo ""
+
+db-stop:
+	@echo ">>> Stopping local PostgreSQL container ($(DB_CONTAINER))..."
+	docker stop $(DB_CONTAINER) && docker rm $(DB_CONTAINER) || true
+
+db-reset: db-stop db-start
+	@echo ">>> Local PostgreSQL reset (data wiped)."
+
+db-migrate:
+	@echo ">>> Migrating SQLite dev data → PostgreSQL..."
+	@echo "    Source: movie_finder.db"
+	@echo "    Target: $(DATABASE_URL)"
+	uv sync --frozen --quiet
+	DATABASE_URL="$(DATABASE_URL)" uv run python scripts/migrate_sqlite_to_postgres.py movie_finder.db
 
 # --------------------------------------------------------------------------- #
 # Code quality
@@ -154,22 +210,18 @@ test-rag:
 	uv run pytest rag_ingestion/tests/ -v --tb=short
 
 # --------------------------------------------------------------------------- #
-# Docker
+# Full-stack Docker  (these targets drive the root-level docker-compose.yml)
 # --------------------------------------------------------------------------- #
 
 docker-up:
-	docker compose up -d
-	@echo "Stack started."
-	@echo "  Qdrant:  http://localhost:6333"
-	@echo "  App:     http://localhost:8000  (placeholder until app/ is implemented)"
+	cd .. && docker compose up -d
+	@echo "Full stack started (from root docker-compose.yml)."
+	@echo "  PostgreSQL: localhost:5432"
+	@echo "  Backend:    http://localhost:8000"
+	@echo "  Frontend:   http://localhost:80"
 
 docker-down:
-	docker compose down
-
-docker-chain:
-	cd chain && docker compose up -d
-	@echo "Chain dev stack started."
-	@echo "  Qdrant:  http://localhost:6333"
+	cd .. && docker compose down
 
 # --------------------------------------------------------------------------- #
 # Maintenance

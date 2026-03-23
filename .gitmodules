@@ -6,20 +6,6 @@
 	path = rag_ingestion
 	url = https://github.com/aharbii/movie-finder-rag.git
 
-# TODO: After creating the movie-finder-chain GitHub repo and pushing chain/ to it,
-# run the following commands to register chain/ as a submodule:
-#
-#   git rm -r chain/
-#   git commit -m "chore: remove chain/ as tracked directory (converting to submodule)"
-#   git submodule add https://github.com/aharbii/movie-finder-chain.git chain
-#   git submodule update --init --recursive
-#   git commit -m "chore: add chain as git submodule"
-#
-# Then uncomment the entry below:
-#
-# [submodule "chain"]
-# 	path = chain
-# 	url = https://github.com/aharbii/movie-finder-chain.git
 [submodule "chain"]
 	path = chain
 	url = https://github.com/aharbii/movie-finder-chain.git

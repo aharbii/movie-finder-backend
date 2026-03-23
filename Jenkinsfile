@@ -160,28 +160,51 @@ pipeline {
                 }
 
                 stage('Test — app') {
-                    agent { docker { image "${UV_IMAGE}" } }
+                    // Run on the Jenkins host (not inside a UV container) so we can
+                    // manage Docker containers directly for the PostgreSQL sidecar.
+                    agent { label 'any' }
                     environment {
-                        // All 229 app tests are mocked — only APP_SECRET_KEY is required.
-                        // This is NOT a production secret; it is only used to satisfy
-                        // AppConfig validation during the test run.
                         APP_SECRET_KEY = 'ci-test-only-not-a-real-secret' // pragma: allowlist secret
+                        DATABASE_URL   = 'postgresql://postgres:postgres@localhost:5432/movie_finder_test' // pragma: allowlist secret
                     }
                     steps {
-                        sh 'uv sync --frozen --group test'
+                        // Start a throwaway postgres container on the host network.
                         sh '''
-                            uv run pytest app/tests/ \
-                                --cov=app/src \
-                                --cov-report=xml:app-coverage.xml \
-                                --junitxml=app-test-results.xml \
-                                -v --tb=short
+                            docker run -d --name ci-app-postgres \
+                                --network host \
+                                -e POSTGRES_PASSWORD=postgres \
+                                -e POSTGRES_DB=movie_finder_test \
+                                postgres:16-alpine
+                            for i in $(seq 1 30); do
+                                docker exec ci-app-postgres \
+                                    pg_isready -U postgres -d movie_finder_test \
+                                    && break || sleep 1
+                            done
                         '''
+                        // Run tests inside the UV image; --network host lets it reach
+                        // the postgres container at localhost:5432.
+                        sh """
+                            docker run --rm \
+                                --network host \
+                                -e APP_SECRET_KEY="\$APP_SECRET_KEY" \
+                                -e DATABASE_URL="\$DATABASE_URL" \
+                                -v "\$(pwd)":/workspace \
+                                -w /workspace \
+                                ${UV_IMAGE} \
+                                sh -c 'uv sync --frozen --group test && \
+                                       uv run pytest app/tests/ \
+                                           --cov=app/src \
+                                           --cov-report=xml:app-coverage.xml \
+                                           --junitxml=app-test-results.xml \
+                                           -v --tb=short'
+                        """
                     }
                     post {
                         always {
                             junit allowEmptyResults: true, testResults: 'app-test-results.xml'
                             cobertura coberturaReportFile: 'app-coverage.xml',
                                       onlyStable: false, failNoReports: false
+                            sh 'docker stop ci-app-postgres && docker rm ci-app-postgres || true'
                         }
                     }
                 }

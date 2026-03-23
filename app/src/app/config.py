@@ -30,24 +30,15 @@ class AppConfig(BaseSettings):
     app_secret_key: str = Field(..., description="JWT signing secret (openssl rand -hex 32)")
 
     # --- Database ---
-    # Accepts bare path (./movie_finder.db) or SQLAlchemy-style URL
-    # (sqlite+aiosqlite:///./movie_finder.db).  The store strips the prefix.
+    # PostgreSQL connection URL: postgresql://user:password@host:5432/dbname # pragma: allowlist secret
     database_url: str = Field(
-        default="./movie_finder.db",
-        description="SQLite path or sqlite+aiosqlite:/// URL",
+        ...,
+        description="PostgreSQL connection URL (postgresql://user:pass@host:port/db)",  # pragma: allowlist secret
     )
 
     # --- JWT lifetimes ---
     access_token_expire_minutes: int = Field(default=30, ge=1)
     refresh_token_expire_days: int = Field(default=7, ge=1)
-
-    @property
-    def sqlite_path(self) -> str:
-        """Return the bare file path regardless of URL format."""
-        prefix = "sqlite+aiosqlite:///"
-        if self.database_url.startswith(prefix):
-            return self.database_url[len(prefix) :]
-        return self.database_url
 
 
 @lru_cache(maxsize=1)

@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-import sqlite3
-
+import asyncpg
 import pytest
 
 from app.session.store import SessionStore
@@ -38,7 +37,7 @@ class TestUsers:
 
     async def test_duplicate_email_raises(self, store: SessionStore) -> None:
         await store.create_user("dup@example.com", "hashed_pw")
-        with pytest.raises(sqlite3.IntegrityError):
+        with pytest.raises(asyncpg.UniqueViolationError):
             await store.create_user("dup@example.com", "other_pw")
 
 
