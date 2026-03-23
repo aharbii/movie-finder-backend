@@ -1,0 +1,674 @@
+"""Tests for POST /chat (SSE streaming) and GET /chat/{session_id}/history."""
+
+from __future__ import annotations
+
+import json
+import uuid
+from typing import Any
+
+import httpx
+
+from app.session.store import SessionStore
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def parse_sse(text: str) -> list[dict[str, Any]]:
+    """Extract JSON payloads from an SSE response body."""
+    return [
+        json.loads(line[len("data: ") :]) for line in text.splitlines() if line.startswith("data: ")
+    ]
+
+
+def new_session_id() -> str:
+    return str(uuid.uuid4())
+
+
+# ---------------------------------------------------------------------------
+# POST /chat
+# ---------------------------------------------------------------------------
+
+
+class TestChatEndpoint:
+    async def test_returns_200(
+        self,
+        client: httpx.AsyncClient,
+        auth_headers: dict[str, str],
+    ) -> None:
+        resp = await client.post(
+            "/chat",
+            json={"session_id": new_session_id(), "message": "A heist movie"},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 200
+
+    async def test_content_type_is_sse(
+        self,
+        client: httpx.AsyncClient,
+        auth_headers: dict[str, str],
+    ) -> None:
+        resp = await client.post(
+            "/chat",
+            json={"session_id": new_session_id(), "message": "A heist movie"},
+            headers=auth_headers,
+        )
+        assert "text/event-stream" in resp.headers["content-type"]
+
+    async def test_done_event_present(
+        self,
+        client: httpx.AsyncClient,
+        auth_headers: dict[str, str],
+    ) -> None:
+        resp = await client.post(
+            "/chat",
+            json={"session_id": new_session_id(), "message": "A heist movie"},
+            headers=auth_headers,
+        )
+        events = parse_sse(resp.text)
+        done = next((e for e in events if e.get("type") == "done"), None)
+        assert done is not None
+
+    async def test_done_event_contains_required_fields(
+        self,
+        client: httpx.AsyncClient,
+        auth_headers: dict[str, str],
+    ) -> None:
+        sid = new_session_id()
+        resp = await client.post(
+            "/chat",
+            json={"session_id": sid, "message": "A heist movie"},
+            headers=auth_headers,
+        )
+        done = next(e for e in parse_sse(resp.text) if e.get("type") == "done")
+        assert done["session_id"] == sid
+        assert "reply" in done
+        assert "phase" in done
+
+    async def test_token_events_are_streamed(
+        self,
+        client: httpx.AsyncClient,
+        auth_headers: dict[str, str],
+    ) -> None:
+        """Token events should appear before the done event."""
+        resp = await client.post(
+            "/chat",
+            json={"session_id": new_session_id(), "message": "A heist movie"},
+            headers=auth_headers,
+        )
+        events = parse_sse(resp.text)
+        token_events = [e for e in events if e.get("type") == "token"]
+        assert len(token_events) > 0
+        assert all("content" in e for e in token_events)
+
+    async def test_token_events_precede_done_event(
+        self,
+        client: httpx.AsyncClient,
+        auth_headers: dict[str, str],
+    ) -> None:
+        resp = await client.post(
+            "/chat",
+            json={"session_id": new_session_id(), "message": "A heist movie"},
+            headers=auth_headers,
+        )
+        events = parse_sse(resp.text)
+        types = [e["type"] for e in events]
+        assert types[-1] == "done"
+
+    async def test_reply_text_matches_streamed_tokens(
+        self,
+        client: httpx.AsyncClient,
+        auth_headers: dict[str, str],
+    ) -> None:
+        resp = await client.post(
+            "/chat",
+            json={"session_id": new_session_id(), "message": "A heist movie"},
+            headers=auth_headers,
+        )
+        events = parse_sse(resp.text)
+        token_text = "".join(e["content"] for e in events if e.get("type") == "token")
+        done = next(e for e in events if e.get("type") == "done")
+        assert done["reply"] == token_text
+
+    async def test_messages_persisted_to_store(
+        self,
+        client: httpx.AsyncClient,
+        auth_headers: dict[str, str],
+        store: SessionStore,
+    ) -> None:
+        sid = new_session_id()
+        await client.post(
+            "/chat",
+            json={"session_id": sid, "message": "Inception?"},
+            headers=auth_headers,
+        )
+        messages = await store.get_messages(sid)
+        roles = [m["role"] for m in messages]
+        assert "user" in roles
+        assert "assistant" in roles
+
+    async def test_session_auto_created_on_first_message(
+        self,
+        client: httpx.AsyncClient,
+        auth_headers: dict[str, str],
+        store: SessionStore,
+    ) -> None:
+        sid = new_session_id()
+        assert await store.get_session(sid) is None
+        await client.post(
+            "/chat",
+            json={"session_id": sid, "message": "Hello"},
+            headers=auth_headers,
+        )
+        assert await store.get_session(sid) is not None
+
+    async def test_unauthenticated_returns_401(self, client: httpx.AsyncClient) -> None:
+        resp = await client.post(
+            "/chat",
+            json={"session_id": new_session_id(), "message": "Hello"},
+        )
+        assert resp.status_code == 401
+
+    async def test_wrong_session_owner_returns_403(
+        self,
+        client: httpx.AsyncClient,
+        store: SessionStore,
+        registered_user: tuple[str, str, str],
+    ) -> None:
+        """A session created by another user must not be accessible."""
+        # Register a second user and get their token
+        resp2 = await client.post(
+            "/auth/register",
+            json={
+                "email": "other@example.com",
+                "password": "password123",  # pragma: allowlist secret
+            },
+        )
+        other_token = resp2.json()["access_token"]
+
+        # First user creates a session
+        _, _, first_token = registered_user
+        sid = new_session_id()
+        await client.post(
+            "/chat",
+            json={"session_id": sid, "message": "Hello"},
+            headers={"Authorization": f"Bearer {first_token}"},
+        )
+
+        # Second user tries to use the same session ID
+        resp = await client.post(
+            "/chat",
+            json={"session_id": sid, "message": "Hi"},
+            headers={"Authorization": f"Bearer {other_token}"},
+        )
+        assert resp.status_code == 403
+
+    async def test_confirmation_phase_includes_candidates(
+        self,
+        store: SessionStore,
+        registered_user: tuple[str, str, str],
+        make_mock_graph: Any,
+        noop_lifespan: Any,
+    ) -> None:
+        """When graph output has enriched_movies and phase=confirmation, candidates are included."""
+        from app.dependencies import get_graph, get_store
+        from app.main import app
+
+        candidates = [{"rag_title": "Inception", "imdb_id": "tt1375666", "confidence": 0.9}]
+        graph_with_candidates = make_mock_graph(phase="confirmation", enriched_movies=candidates)
+
+        app.dependency_overrides[get_store] = lambda: store
+        app.dependency_overrides[get_graph] = lambda: graph_with_candidates
+        original = app.router.lifespan_context
+        app.router.lifespan_context = noop_lifespan
+
+        try:
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app),  # type: ignore[arg-type]
+                base_url="http://test",
+            ) as c:
+                _, _, token = registered_user
+                resp = await c.post(
+                    "/chat",
+                    json={"session_id": new_session_id(), "message": "Dream movie"},
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+        finally:
+            app.router.lifespan_context = original
+            app.dependency_overrides.clear()
+
+        done = next(e for e in parse_sse(resp.text) if e.get("type") == "done")
+        assert "candidates" in done
+        assert done["candidates"] == candidates
+
+    async def test_fallback_reply_from_messages_when_no_tokens(
+        self,
+        store: SessionStore,
+        registered_user: tuple[str, str, str],
+        make_mock_graph: Any,
+        noop_lifespan: Any,
+    ) -> None:
+        """When no token events are emitted, reply is extracted from final state messages."""
+        from app.dependencies import get_graph, get_store
+        from app.main import app
+
+        graph_no_tokens = make_mock_graph(reply="Fallback reply from state.", emit_tokens=False)
+
+        app.dependency_overrides[get_store] = lambda: store
+        app.dependency_overrides[get_graph] = lambda: graph_no_tokens
+        original = app.router.lifespan_context
+        app.router.lifespan_context = noop_lifespan
+
+        try:
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app),  # type: ignore[arg-type]
+                base_url="http://test",
+            ) as c:
+                _, _, token = registered_user
+                resp = await c.post(
+                    "/chat",
+                    json={"session_id": new_session_id(), "message": "Hello"},
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+        finally:
+            app.router.lifespan_context = original
+            app.dependency_overrides.clear()
+
+        done = next(e for e in parse_sse(resp.text) if e.get("type") == "done")
+        assert done["reply"] == "Fallback reply from state."
+
+
+# ---------------------------------------------------------------------------
+# GET /chat/{session_id}/history
+# ---------------------------------------------------------------------------
+
+
+class TestChatHistory:
+    async def _create_session_with_messages(
+        self,
+        client: httpx.AsyncClient,
+        auth_headers: dict[str, str],
+        session_id: str,
+        messages: list[str],
+    ) -> None:
+        for msg in messages:
+            await client.post(
+                "/chat",
+                json={"session_id": session_id, "message": msg},
+                headers=auth_headers,
+            )
+
+    async def test_returns_200_for_own_session(
+        self,
+        client: httpx.AsyncClient,
+        auth_headers: dict[str, str],
+    ) -> None:
+        sid = new_session_id()
+        await self._create_session_with_messages(client, auth_headers, sid, ["Hello"])
+        resp = await client.get(f"/chat/{sid}/history", headers=auth_headers)
+        assert resp.status_code == 200
+
+    async def test_history_contains_correct_fields(
+        self,
+        client: httpx.AsyncClient,
+        auth_headers: dict[str, str],
+    ) -> None:
+        sid = new_session_id()
+        await self._create_session_with_messages(client, auth_headers, sid, ["Hello"])
+        body = (await client.get(f"/chat/{sid}/history", headers=auth_headers)).json()
+        assert body["session_id"] == sid
+        assert "phase" in body
+        assert "messages" in body
+
+    async def test_history_includes_all_turns(
+        self,
+        client: httpx.AsyncClient,
+        auth_headers: dict[str, str],
+    ) -> None:
+        sid = new_session_id()
+        await self._create_session_with_messages(client, auth_headers, sid, ["Turn 1", "Turn 2"])
+        body = (await client.get(f"/chat/{sid}/history", headers=auth_headers)).json()
+        # Each turn appends one user + one assistant message = 4 total
+        assert len(body["messages"]) == 4
+
+    async def test_history_for_nonexistent_session_returns_404(
+        self,
+        client: httpx.AsyncClient,
+        auth_headers: dict[str, str],
+    ) -> None:
+        resp = await client.get(f"/chat/{new_session_id()}/history", headers=auth_headers)
+        assert resp.status_code == 404
+
+    async def test_history_for_other_users_session_returns_404(
+        self,
+        client: httpx.AsyncClient,
+        auth_headers: dict[str, str],
+    ) -> None:
+        # Register another user
+        other = await client.post(
+            "/auth/register",
+            json={
+                "email": "other2@example.com",
+                "password": "password123",  # pragma: allowlist secret
+            },
+        )
+        other_headers = {"Authorization": f"Bearer {other.json()['access_token']}"}
+
+        # Other user creates a session
+        sid = new_session_id()
+        await self._create_session_with_messages(client, other_headers, sid, ["Hi"])
+
+        # Original user tries to read it
+        resp = await client.get(f"/chat/{sid}/history", headers=auth_headers)
+        assert resp.status_code == 404
+
+    async def test_unauthenticated_returns_401(self, client: httpx.AsyncClient) -> None:
+        resp = await client.get(f"/chat/{new_session_id()}/history")
+        assert resp.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# GET /chat/sessions
+# ---------------------------------------------------------------------------
+
+
+class TestListSessions:
+    async def test_returns_200(
+        self,
+        client: httpx.AsyncClient,
+        auth_headers: dict[str, str],
+    ) -> None:
+        resp = await client.get("/chat/sessions", headers=auth_headers)
+        assert resp.status_code == 200
+
+    async def test_empty_for_new_user(
+        self,
+        client: httpx.AsyncClient,
+        auth_headers: dict[str, str],
+    ) -> None:
+        resp = await client.get("/chat/sessions", headers=auth_headers)
+        assert resp.json() == []
+
+    async def test_returns_session_after_chat(
+        self,
+        client: httpx.AsyncClient,
+        auth_headers: dict[str, str],
+    ) -> None:
+        sid = new_session_id()
+        await client.post(
+            "/chat",
+            json={"session_id": sid, "message": "A space movie"},
+            headers=auth_headers,
+        )
+        resp = await client.get("/chat/sessions", headers=auth_headers)
+        body = resp.json()
+        assert len(body) == 1
+        assert body[0]["session_id"] == sid
+
+    async def test_response_shape(
+        self,
+        client: httpx.AsyncClient,
+        auth_headers: dict[str, str],
+    ) -> None:
+        sid = new_session_id()
+        await client.post(
+            "/chat",
+            json={"session_id": sid, "message": "A space movie"},
+            headers=auth_headers,
+        )
+        item = (await client.get("/chat/sessions", headers=auth_headers)).json()[0]
+        assert "session_id" in item
+        assert "phase" in item
+        assert "updated_at" in item
+        assert "first_message" in item
+
+    async def test_first_message_matches_user_input(
+        self,
+        client: httpx.AsyncClient,
+        auth_headers: dict[str, str],
+    ) -> None:
+        sid = new_session_id()
+        await client.post(
+            "/chat",
+            json={"session_id": sid, "message": "A space movie"},
+            headers=auth_headers,
+        )
+        item = (await client.get("/chat/sessions", headers=auth_headers)).json()[0]
+        assert item["first_message"] == "A space movie"
+
+    async def test_ordered_newest_first(
+        self,
+        client: httpx.AsyncClient,
+        auth_headers: dict[str, str],
+    ) -> None:
+        sid1, sid2 = new_session_id(), new_session_id()
+        await client.post(
+            "/chat", json={"session_id": sid1, "message": "First"}, headers=auth_headers
+        )
+        await client.post(
+            "/chat", json={"session_id": sid2, "message": "Second"}, headers=auth_headers
+        )
+        body = (await client.get("/chat/sessions", headers=auth_headers)).json()
+        assert body[0]["session_id"] == sid2
+        assert body[1]["session_id"] == sid1
+
+    async def test_only_own_sessions_returned(
+        self,
+        client: httpx.AsyncClient,
+        auth_headers: dict[str, str],
+    ) -> None:
+        # Another user's session
+        other = await client.post(
+            "/auth/register",
+            json={
+                "email": "other3@example.com",
+                "password": "password123",  # pragma: allowlist secret
+            },
+        )
+        other_headers = {"Authorization": f"Bearer {other.json()['access_token']}"}
+        await client.post(
+            "/chat",
+            json={"session_id": new_session_id(), "message": "Other user msg"},
+            headers=other_headers,
+        )
+        # Original user's session list should be empty
+        body = (await client.get("/chat/sessions", headers=auth_headers)).json()
+        assert body == []
+
+    async def test_unauthenticated_returns_401(self, client: httpx.AsyncClient) -> None:
+        resp = await client.get("/chat/sessions")
+        assert resp.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# confirmed_movie persistence
+# ---------------------------------------------------------------------------
+
+
+class TestConfirmedMoviePersistence:
+    async def test_history_includes_confirmed_movie_field(
+        self,
+        client: httpx.AsyncClient,
+        auth_headers: dict[str, str],
+        store: SessionStore,
+    ) -> None:
+        """GET /chat/{session_id}/history always includes confirmed_movie key."""
+        sid = new_session_id()
+        await client.post(
+            "/chat",
+            json={"session_id": sid, "message": "Hello"},
+            headers=auth_headers,
+        )
+        body = (await client.get(f"/chat/{sid}/history", headers=auth_headers)).json()
+        assert "confirmed_movie" in body
+
+    async def test_history_confirmed_movie_null_before_qa(
+        self,
+        client: httpx.AsyncClient,
+        auth_headers: dict[str, str],
+        store: SessionStore,
+    ) -> None:
+        sid = new_session_id()
+        await client.post(
+            "/chat",
+            json={"session_id": sid, "message": "Hello"},
+            headers=auth_headers,
+        )
+        body = (await client.get(f"/chat/{sid}/history", headers=auth_headers)).json()
+        assert body["confirmed_movie"] is None
+
+    async def test_history_confirmed_movie_populated_after_set(
+        self,
+        client: httpx.AsyncClient,
+        auth_headers: dict[str, str],
+        store: SessionStore,
+    ) -> None:
+        """When the store has a confirmed_movie, it appears in GET history."""
+        sid = new_session_id()
+        await client.post(
+            "/chat",
+            json={"session_id": sid, "message": "Hello"},
+            headers=auth_headers,
+        )
+        movie = {"imdb_id": "tt1375666", "imdb_title": "Inception", "imdb_year": 2010}
+        await store.set_confirmed_movie(sid, movie)
+        body = (await client.get(f"/chat/{sid}/history", headers=auth_headers)).json()
+        assert body["confirmed_movie"] == movie
+
+    async def test_sessions_confirmed_movie_populated_after_set(
+        self,
+        client: httpx.AsyncClient,
+        auth_headers: dict[str, str],
+        store: SessionStore,
+    ) -> None:
+        """When the store has a confirmed_movie, it appears in GET /chat/sessions."""
+        sid = new_session_id()
+        await client.post(
+            "/chat",
+            json={"session_id": sid, "message": "Hello"},
+            headers=auth_headers,
+        )
+        movie = {"imdb_id": "tt0133093", "imdb_title": "The Matrix", "imdb_year": 1999}
+        await store.set_confirmed_movie(sid, movie)
+        body = (await client.get("/chat/sessions", headers=auth_headers)).json()
+        assert body[0]["confirmed_movie"] == movie
+
+    async def test_set_confirmed_movie_called_on_qa_phase(
+        self,
+        store: SessionStore,
+        registered_user: tuple[str, str, str],
+        make_mock_graph: Any,
+        noop_lifespan: Any,
+    ) -> None:
+        """When graph outputs phase=qa with confirmed_movie_data, it is persisted."""
+        from app.dependencies import get_graph, get_store
+        from app.main import app
+
+        movie_data = {"imdb_id": "tt1375666", "imdb_title": "Inception", "imdb_year": 2010}
+        graph_qa = make_mock_graph(phase="qa", confirmed_movie_data=movie_data)
+
+        app.dependency_overrides[get_store] = lambda: store
+        app.dependency_overrides[get_graph] = lambda: graph_qa
+        original = app.router.lifespan_context
+        app.router.lifespan_context = noop_lifespan
+
+        sid = new_session_id()
+        try:
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app),  # type: ignore[arg-type]
+                base_url="http://test",
+            ) as c:
+                _, _, token = registered_user
+                await c.post(
+                    "/chat",
+                    json={"session_id": sid, "message": "I pick Inception"},
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+        finally:
+            app.router.lifespan_context = original
+            app.dependency_overrides.clear()
+
+        session = await store.get_session(sid)
+        assert session is not None
+        assert session["confirmed_movie"] == movie_data
+
+
+# ---------------------------------------------------------------------------
+# DELETE /chat/{session_id}
+# ---------------------------------------------------------------------------
+
+
+class TestDeleteSession:
+    async def _make_session(
+        self,
+        client: httpx.AsyncClient,
+        auth_headers: dict[str, str],
+    ) -> str:
+        sid = new_session_id()
+        await client.post(
+            "/chat",
+            json={"session_id": sid, "message": "Hello"},
+            headers=auth_headers,
+        )
+        return sid
+
+    async def test_delete_returns_204(
+        self,
+        client: httpx.AsyncClient,
+        auth_headers: dict[str, str],
+    ) -> None:
+        sid = await self._make_session(client, auth_headers)
+        resp = await client.delete(f"/chat/{sid}", headers=auth_headers)
+        assert resp.status_code == 204
+
+    async def test_deleted_session_not_in_list(
+        self,
+        client: httpx.AsyncClient,
+        auth_headers: dict[str, str],
+    ) -> None:
+        sid = await self._make_session(client, auth_headers)
+        await client.delete(f"/chat/{sid}", headers=auth_headers)
+        body = (await client.get("/chat/sessions", headers=auth_headers)).json()
+        assert all(s["session_id"] != sid for s in body)
+
+    async def test_deleted_session_history_returns_404(
+        self,
+        client: httpx.AsyncClient,
+        auth_headers: dict[str, str],
+    ) -> None:
+        sid = await self._make_session(client, auth_headers)
+        await client.delete(f"/chat/{sid}", headers=auth_headers)
+        resp = await client.get(f"/chat/{sid}/history", headers=auth_headers)
+        assert resp.status_code == 404
+
+    async def test_delete_nonexistent_session_returns_404(
+        self,
+        client: httpx.AsyncClient,
+        auth_headers: dict[str, str],
+    ) -> None:
+        resp = await client.delete(f"/chat/{new_session_id()}", headers=auth_headers)
+        assert resp.status_code == 404
+
+    async def test_delete_other_users_session_returns_404(
+        self,
+        client: httpx.AsyncClient,
+        auth_headers: dict[str, str],
+    ) -> None:
+        other = await client.post(
+            "/auth/register",
+            json={
+                "email": "other_del@example.com",
+                "password": "password123",  # pragma: allowlist secret
+            },
+        )
+        other_headers = {"Authorization": f"Bearer {other.json()['access_token']}"}
+        sid = await self._make_session(client, other_headers)
+
+        # Original user tries to delete other user's session
+        resp = await client.delete(f"/chat/{sid}", headers=auth_headers)
+        assert resp.status_code == 404
+
+    async def test_unauthenticated_returns_401(self, client: httpx.AsyncClient) -> None:
+        resp = await client.delete(f"/chat/{new_session_id()}")
+        assert resp.status_code == 401

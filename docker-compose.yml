@@ -1,0 +1,72 @@
+# =============================================================================
+# backend — full-stack docker-compose (local development & integration tests)
+#
+# Services:
+#   qdrant  — vector store (always started)
+#   app     — FastAPI application (placeholder until app/ is implemented)
+#
+# Usage:
+#   cp .env.example .env && $EDITOR .env   # fill in API keys
+#   docker compose up                       # start full stack
+#   docker compose up qdrant               # start only Qdrant for chain dev
+#   docker compose logs -f app             # follow app logs
+#
+# Submodules must be initialized first:
+#   git submodule update --init --recursive
+# =============================================================================
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # Qdrant — vector store
+  # Production: use Qdrant Cloud (configure QDRANT_ENDPOINT in .env)
+  # Development: use this local container (endpoint auto-overridden below)
+  # ---------------------------------------------------------------------------
+  qdrant:
+    image: qdrant/qdrant:v1.13.0
+    container_name: movie-finder-qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"   # gRPC
+    volumes:
+      - qdrant_data:/qdrant/storage
+    environment:
+      QDRANT__SERVICE__GRPC_PORT: "6334"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:6333/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # App — FastAPI application
+  # ---------------------------------------------------------------------------
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    container_name: movie-finder-app
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      # Override Qdrant to use the local container in dev
+      QDRANT_ENDPOINT: "http://qdrant:6333"
+      QDRANT_API_KEY: ""
+    depends_on:
+      qdrant:
+        condition: service_healthy
+    develop:
+      watch:
+        - action: sync
+          path: ./app/src
+          target: /app/src
+    restart: unless-stopped
+
+volumes:
+  qdrant_data:
+    name: movie-finder-qdrant-data
