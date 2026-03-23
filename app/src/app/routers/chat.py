@@ -21,6 +21,29 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 _USER_FACING_NODES = frozenset({"presentation", "qa_agent", "dead_end", "refinement"})
 
 
+def _message_text(msg: Any) -> str:
+    """Return the plain text of a LangChain message, handling both str and
+    Anthropic list-of-content-blocks formats.
+
+    Anthropic models occasionally return ``content`` as a list of typed blocks,
+    e.g. ``[{"type": "text", "text": "Great choice!..."}]``, instead of a
+    plain string.  ``isinstance(content, str)`` would silently fail in that
+    case and produce an empty reply.
+    """
+    if not isinstance(msg, AIMessage):
+        return ""
+    content = msg.content
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(
+            block.get("text", "") if isinstance(block, dict) else str(block)
+            for block in content
+            if not isinstance(block, dict) or block.get("type") == "text"
+        )
+    return ""
+
+
 class ChatRequest(BaseModel):
     session_id: str
     message: str
@@ -61,7 +84,7 @@ async def _stream_reply(
             node = event.get("metadata", {}).get("langgraph_node", "")
             if node in _USER_FACING_NODES:
                 chunk = event["data"]["chunk"]
-                token: str = chunk.content if isinstance(chunk.content, str) else ""
+                token: str = _message_text(chunk)
                 if token:
                     reply_chunks.append(token)
                     yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
@@ -75,10 +98,13 @@ async def _stream_reply(
     if reply_chunks:
         reply_text = "".join(reply_chunks)
     else:
-        # Fallback: pull last AIMessage from the graph output
+        # Fallback: pull last AIMessage from the graph output.
+        # Uses _message_text() so Anthropic list-of-blocks content is handled
+        # correctly — the qa_agent node uses ainvoke (no token streaming), so
+        # this path is the only source of its reply text.
         msgs: list[Any] = final_output.get("messages", [])
         last_ai = next((m for m in reversed(msgs) if isinstance(m, AIMessage)), None)
-        reply_text = last_ai.content if last_ai and isinstance(last_ai.content, str) else ""
+        reply_text = _message_text(last_ai) if last_ai else ""
 
     phase: str = final_output.get("phase", "discovery")
 
