@@ -366,3 +366,116 @@ class TestChatHistory:
     async def test_unauthenticated_returns_401(self, client: httpx.AsyncClient) -> None:
         resp = await client.get(f"/chat/{new_session_id()}/history")
         assert resp.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# GET /chat/sessions
+# ---------------------------------------------------------------------------
+
+
+class TestListSessions:
+    async def test_returns_200(
+        self,
+        client: httpx.AsyncClient,
+        auth_headers: dict[str, str],
+    ) -> None:
+        resp = await client.get("/chat/sessions", headers=auth_headers)
+        assert resp.status_code == 200
+
+    async def test_empty_for_new_user(
+        self,
+        client: httpx.AsyncClient,
+        auth_headers: dict[str, str],
+    ) -> None:
+        resp = await client.get("/chat/sessions", headers=auth_headers)
+        assert resp.json() == []
+
+    async def test_returns_session_after_chat(
+        self,
+        client: httpx.AsyncClient,
+        auth_headers: dict[str, str],
+    ) -> None:
+        sid = new_session_id()
+        await client.post(
+            "/chat",
+            json={"session_id": sid, "message": "A space movie"},
+            headers=auth_headers,
+        )
+        resp = await client.get("/chat/sessions", headers=auth_headers)
+        body = resp.json()
+        assert len(body) == 1
+        assert body[0]["session_id"] == sid
+
+    async def test_response_shape(
+        self,
+        client: httpx.AsyncClient,
+        auth_headers: dict[str, str],
+    ) -> None:
+        sid = new_session_id()
+        await client.post(
+            "/chat",
+            json={"session_id": sid, "message": "A space movie"},
+            headers=auth_headers,
+        )
+        item = (await client.get("/chat/sessions", headers=auth_headers)).json()[0]
+        assert "session_id" in item
+        assert "phase" in item
+        assert "updated_at" in item
+        assert "first_message" in item
+
+    async def test_first_message_matches_user_input(
+        self,
+        client: httpx.AsyncClient,
+        auth_headers: dict[str, str],
+    ) -> None:
+        sid = new_session_id()
+        await client.post(
+            "/chat",
+            json={"session_id": sid, "message": "A space movie"},
+            headers=auth_headers,
+        )
+        item = (await client.get("/chat/sessions", headers=auth_headers)).json()[0]
+        assert item["first_message"] == "A space movie"
+
+    async def test_ordered_newest_first(
+        self,
+        client: httpx.AsyncClient,
+        auth_headers: dict[str, str],
+    ) -> None:
+        sid1, sid2 = new_session_id(), new_session_id()
+        await client.post(
+            "/chat", json={"session_id": sid1, "message": "First"}, headers=auth_headers
+        )
+        await client.post(
+            "/chat", json={"session_id": sid2, "message": "Second"}, headers=auth_headers
+        )
+        body = (await client.get("/chat/sessions", headers=auth_headers)).json()
+        assert body[0]["session_id"] == sid2
+        assert body[1]["session_id"] == sid1
+
+    async def test_only_own_sessions_returned(
+        self,
+        client: httpx.AsyncClient,
+        auth_headers: dict[str, str],
+    ) -> None:
+        # Another user's session
+        other = await client.post(
+            "/auth/register",
+            json={
+                "email": "other3@example.com",
+                "password": "password123",  # pragma: allowlist secret
+            },
+        )
+        other_headers = {"Authorization": f"Bearer {other.json()['access_token']}"}
+        await client.post(
+            "/chat",
+            json={"session_id": new_session_id(), "message": "Other user msg"},
+            headers=other_headers,
+        )
+        # Original user's session list should be empty
+        body = (await client.get("/chat/sessions", headers=auth_headers)).json()
+        assert body == []
+
+    async def test_unauthenticated_returns_401(self, client: httpx.AsyncClient) -> None:
+        resp = await client.get("/chat/sessions")
+        assert resp.status_code == 401

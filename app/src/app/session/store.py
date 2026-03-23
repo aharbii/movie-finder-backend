@@ -130,6 +130,31 @@ class SessionStore:
             row = await cur.fetchone()
         return dict(row) if row else None
 
+    async def get_sessions(self, user_id: str) -> list[dict[str, Any]]:
+        """Return all sessions for *user_id*, newest first, with first user message."""
+        async with self._conn.execute(
+            """
+            SELECT
+                s.id         AS session_id,
+                s.phase,
+                s.updated_at,
+                (
+                    SELECT m.content
+                    FROM   messages m
+                    WHERE  m.session_id = s.id
+                      AND  m.role = 'user'
+                    ORDER  BY m.created_at
+                    LIMIT  1
+                ) AS first_message
+            FROM   sessions s
+            WHERE  s.user_id = ?
+            ORDER  BY s.updated_at DESC
+            """,
+            (user_id,),
+        ) as cur:
+            rows = await cur.fetchall()
+        return [dict(r) for r in rows]
+
     async def update_session_phase(self, session_id: str, phase: str) -> None:
         await self._conn.execute(
             "UPDATE sessions SET phase = ?, updated_at = ? WHERE id = ?",

@@ -49,6 +49,13 @@ class ChatRequest(BaseModel):
     message: str
 
 
+class SessionSummary(BaseModel):
+    session_id: str
+    phase: str
+    updated_at: str
+    first_message: str | None = None
+
+
 # ---------------------------------------------------------------------------
 # SSE stream generator
 # ---------------------------------------------------------------------------
@@ -132,6 +139,16 @@ async def _stream_reply(
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
+
+
+@router.get("/sessions")
+async def list_sessions(
+    current_user: Annotated[UserInDB, Depends(get_current_user)],
+    store: Annotated[SessionStore, Depends(get_store)],
+) -> list[SessionSummary]:
+    """Return all chat sessions for the authenticated user, newest first."""
+    rows = await store.get_sessions(current_user.id)
+    return [SessionSummary(**row) for row in rows]
 
 
 @router.post("")

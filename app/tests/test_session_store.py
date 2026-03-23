@@ -89,6 +89,50 @@ class TestSessions:
         assert second["phase"] == "qa"
 
 
+class TestGetSessions:
+    async def _user(self, store: SessionStore, email: str = "s@example.com") -> str:
+        user = await store.create_user(email, "pw")
+        return user.id
+
+    async def test_returns_empty_for_new_user(self, store: SessionStore) -> None:
+        uid = await self._user(store)
+        assert await store.get_sessions(uid) == []
+
+    async def test_returns_sessions_newest_first(self, store: SessionStore) -> None:
+        uid = await self._user(store)
+        s1 = await store.get_or_create_session("sess-1", uid)
+        await store.update_session_phase("sess-1", "confirmation")
+        s2 = await store.get_or_create_session("sess-2", uid)
+        rows = await store.get_sessions(uid)
+        # sess-2 was updated_at more recently
+        assert rows[0]["session_id"] == s2["id"]
+        assert rows[1]["session_id"] == s1["id"]
+
+    async def test_first_message_is_first_user_message(self, store: SessionStore) -> None:
+        uid = await self._user(store)
+        await store.get_or_create_session("sess-x", uid)
+        await store.append_message("sess-x", "user", "Hello there")
+        await store.append_message("sess-x", "assistant", "Hi!")
+        await store.append_message("sess-x", "user", "Second message")
+        rows = await store.get_sessions(uid)
+        assert rows[0]["first_message"] == "Hello there"
+
+    async def test_first_message_null_when_no_messages(self, store: SessionStore) -> None:
+        uid = await self._user(store)
+        await store.get_or_create_session("sess-empty", uid)
+        rows = await store.get_sessions(uid)
+        assert rows[0]["first_message"] is None
+
+    async def test_only_returns_sessions_for_owner(self, store: SessionStore) -> None:
+        uid1 = await self._user(store, "owner@example.com")
+        uid2 = await self._user(store, "other@example.com")
+        await store.get_or_create_session("sess-owner", uid1)
+        await store.get_or_create_session("sess-other", uid2)
+        rows = await store.get_sessions(uid1)
+        assert len(rows) == 1
+        assert rows[0]["session_id"] == "sess-owner"
+
+
 class TestMessages:
     async def _session(self, store: SessionStore) -> str:
         user = await store.create_user("m@example.com", "pw")
