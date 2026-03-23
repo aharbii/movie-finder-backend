@@ -1,0 +1,59 @@
+# =============================================================================
+# backend/.dockerignore — controls what is sent as the Docker build context
+#
+# The Dockerfile only COPYs:  pyproject.toml  uv.lock  **/pyproject.toml
+#                              chain/src  imdbapi/src  app/src
+#
+# Everything else is excluded here to keep the build context small and fast,
+# and to prevent secrets leaking into image layers.
+# =============================================================================
+
+# ── Python runtime artifacts ─────────────────────────────────────────────────
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/*.pyd
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/*.egg-info
+**/*.egg
+
+# ── Virtual environments (can be hundreds of MB) ─────────────────────────────
+.venv
+**/.venv
+
+# ── rag_ingestion is a standalone project not used by the app container ──────
+rag_ingestion/
+
+# ── Test suites and CI artifacts ─────────────────────────────────────────────
+**/tests/
+test-results/
+**/coverage.xml
+**/.coverage
+
+# ── Git and version-control metadata ─────────────────────────────────────────
+.git
+.gitignore
+.gitmodules
+.github/
+
+# ── Secrets — NEVER bake into an image ───────────────────────────────────────
+.env
+.env.local
+.env.*.local
+# .env.example is safe (no real values) — keep it out of the image anyway
+.env.example
+
+# ── Developer tooling ────────────────────────────────────────────────────────
+.pre-commit-config.yaml
+Makefile
+deploy/
+
+# ── CI/CD files ──────────────────────────────────────────────────────────────
+Jenkinsfile
+**/Jenkinsfile
+
+# ── Documentation ────────────────────────────────────────────────────────────
+*.md
+docs/

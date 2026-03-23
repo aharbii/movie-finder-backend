@@ -1,19 +1,42 @@
 // =============================================================================
-// movie-finder-backend — Jenkins declarative pipeline (integration CI)
+// movie-finder-backend — Jenkins declarative pipeline
 //
-// This pipeline lints and tests ALL workspace packages together, then builds
-// the application Docker image. It runs against the full submodule tree.
+// Stages:
+//   1. Checkout Submodules
+//   2. Lint (parallel)       — chain, imdbapi, app
+//   3. Test (parallel)       — chain, imdbapi, app, rag_ingestion
+//   4. Build App Image       — main branch + v* tags + DEPLOY_STAGING=true
+//   5. Deploy to Staging     — main branch (auto) or DEPLOY_STAGING=true
+//   6. Deploy to Production  — v* tags only, after manual approval gate
 //
-// Triggers:
-//   • PR validation  — every pull request to main
-//   • Release        — every git tag matching v*
-//   • Manual deploy  — Build with Parameters → check DEPLOY_STAGING
+// Triggers (configure in Jenkins job or via GitHub Branch Source plugin):
+//   • Every PR to main
+//   • Every push to main
+//   • Every git tag matching v*
+//   • Manual: Build with Parameters → check DEPLOY_STAGING
 //
-// Required Jenkins credentials:
-//   docker-registry-url  — Docker registry base URL
+// Jenkins credentials required (Manage Jenkins → Credentials → Global):
 //
-// Required Jenkins plugins:
-//   Docker Pipeline, JUnit, Cobertura, Credentials Binding, Git (submodules)
+//   Shared with the frontend pipeline (same service principal):
+//   acr-login-server   Secret Text      Full ACR hostname, e.g. myacr.azurecr.io
+//   acr-credentials    Username+Pass    SP App ID (user) + client secret (pass)
+//                                       Used for "docker login" to ACR
+//   azure-sp           Username+Pass    Same SP — used for "az login"
+//                                       USR = App ID, PSW = client secret
+//
+//   Backend-specific:
+//   azure-tenant-id    Secret Text      Azure Active Directory tenant ID
+//   azure-sub-id       Secret Text      Azure subscription ID
+//   aca-rg             Secret Text      Container Apps resource group name
+//   aca-staging-name   Secret Text      Staging Container App name
+//   aca-prod-name      Secret Text      Production Container App name
+//
+// Jenkins plugins required:
+//   GitHub, Docker Pipeline, JUnit, Cobertura, Credentials Binding, Git
+//
+// Jenkins agent labels required:
+//   any     — generic agent with Docker available (for checkout + lint + test)
+//   deploy  — agent with Azure CLI (az) installed (for deploy stages)
 // =============================================================================
 
 pipeline {
@@ -29,7 +52,7 @@ pipeline {
         booleanParam(
             name: 'DEPLOY_STAGING',
             defaultValue: false,
-            description: 'Deploy to staging environment after a successful build.'
+            description: 'Force a staging deploy from any branch after a successful build.'
         )
     }
 
@@ -45,7 +68,6 @@ pipeline {
         stage('Checkout Submodules') {
             agent { label 'any' }
             steps {
-                // Ensure all submodules (imdbapi, rag_ingestion, chain) are present
                 sh 'git submodule update --init --recursive'
             }
         }
@@ -55,12 +77,9 @@ pipeline {
             parallel {
 
                 stage('Lint — chain') {
-                    agent {
-                        docker {
-                            image "${UV_IMAGE}"
-                        }
-                    }
+                    agent { docker { image "${UV_IMAGE}" } }
                     steps {
+                        // chain is a workspace member — run from workspace root
                         sh 'uv sync --frozen --group lint'
                         sh 'uv run ruff check chain/src/ chain/tests/'
                         sh 'uv run ruff format --check chain/src/ chain/tests/'
@@ -69,18 +88,24 @@ pipeline {
                 }
 
                 stage('Lint — imdbapi') {
-                    agent {
-                        docker {
-                            image "${UV_IMAGE}"
-                        }
-                    }
+                    agent { docker { image "${UV_IMAGE}" } }
                     steps {
-                        dir('imdbapi') {
-                            sh 'uv sync --frozen --group lint'
-                            sh 'uv run ruff check src/ tests/'
-                            sh 'uv run ruff format --check src/ tests/'
-                            sh 'uv run mypy src/'
-                        }
+                        // imdbapi is a workspace member — run from workspace root
+                        // (do NOT cd into imdbapi/; its lockfile is at the workspace root)
+                        sh 'uv sync --frozen --group lint'
+                        sh 'uv run ruff check imdbapi/src/ imdbapi/tests/'
+                        sh 'uv run ruff format --check imdbapi/src/ imdbapi/tests/'
+                        sh 'uv run mypy imdbapi/src/'
+                    }
+                }
+
+                stage('Lint — app') {
+                    agent { docker { image "${UV_IMAGE}" } }
+                    steps {
+                        sh 'uv sync --frozen --group lint'
+                        sh 'uv run ruff check app/src/ app/tests/'
+                        sh 'uv run ruff format --check app/src/ app/tests/'
+                        sh 'uv run mypy app/src/'
                     }
                 }
 
@@ -92,11 +117,7 @@ pipeline {
             parallel {
 
                 stage('Test — chain') {
-                    agent {
-                        docker {
-                            image "${UV_IMAGE}"
-                        }
-                    }
+                    agent { docker { image "${UV_IMAGE}" } }
                     steps {
                         sh 'uv sync --frozen --group test'
                         sh '''
@@ -111,44 +132,64 @@ pipeline {
                         always {
                             junit allowEmptyResults: true, testResults: 'chain-test-results.xml'
                             cobertura coberturaReportFile: 'chain-coverage.xml',
-                                      onlyStable: false,
-                                      failNoReports: false
+                                      onlyStable: false, failNoReports: false
                         }
                     }
                 }
 
                 stage('Test — imdbapi') {
-                    agent {
-                        docker {
-                            image "${UV_IMAGE}"
-                        }
-                    }
+                    agent { docker { image "${UV_IMAGE}" } }
                     steps {
-                        dir('imdbapi') {
-                            sh 'uv sync --frozen --group test'
-                            sh '''
-                                uv run pytest tests/ \
-                                    --cov=src \
-                                    --cov-report=xml:imdbapi-coverage.xml \
-                                    --junitxml=imdbapi-test-results.xml \
-                                    -v --tb=short
-                            '''
-                        }
+                        // Run from workspace root — imdbapi is a workspace member
+                        sh 'uv sync --frozen --group test'
+                        sh '''
+                            uv run pytest imdbapi/tests/ \
+                                --cov=imdbapi/src \
+                                --cov-report=xml:imdbapi-coverage.xml \
+                                --junitxml=imdbapi-test-results.xml \
+                                -v --tb=short
+                        '''
                     }
                     post {
                         always {
-                            junit allowEmptyResults: true, testResults: 'imdbapi/imdbapi-test-results.xml'
+                            junit allowEmptyResults: true, testResults: 'imdbapi-test-results.xml'
+                            cobertura coberturaReportFile: 'imdbapi-coverage.xml',
+                                      onlyStable: false, failNoReports: false
+                        }
+                    }
+                }
+
+                stage('Test — app') {
+                    agent { docker { image "${UV_IMAGE}" } }
+                    environment {
+                        // All 229 app tests are mocked — only APP_SECRET_KEY is required.
+                        // This is NOT a production secret; it is only used to satisfy
+                        // AppConfig validation during the test run.
+                        APP_SECRET_KEY = 'ci-test-only-not-a-real-secret' // pragma: allowlist secret
+                    }
+                    steps {
+                        sh 'uv sync --frozen --group test'
+                        sh '''
+                            uv run pytest app/tests/ \
+                                --cov=app/src \
+                                --cov-report=xml:app-coverage.xml \
+                                --junitxml=app-test-results.xml \
+                                -v --tb=short
+                        '''
+                    }
+                    post {
+                        always {
+                            junit allowEmptyResults: true, testResults: 'app-test-results.xml'
+                            cobertura coberturaReportFile: 'app-coverage.xml',
+                                      onlyStable: false, failNoReports: false
                         }
                     }
                 }
 
                 stage('Test — rag_ingestion') {
-                    agent {
-                        docker {
-                            image "${UV_IMAGE}"
-                        }
-                    }
+                    agent { docker { image "${UV_IMAGE}" } }
                     steps {
+                        // rag_ingestion is NOT a workspace member — it has its own lockfile
                         dir('rag_ingestion') {
                             sh 'uv sync --frozen --group test'
                             sh '''
@@ -162,7 +203,10 @@ pipeline {
                     }
                     post {
                         always {
-                            junit allowEmptyResults: true, testResults: 'rag_ingestion/rag-test-results.xml'
+                            junit allowEmptyResults: true,
+                                  testResults: 'rag_ingestion/rag-test-results.xml'
+                            cobertura coberturaReportFile: 'rag_ingestion/rag-coverage.xml',
+                                      onlyStable: false, failNoReports: false
                         }
                     }
                 }
@@ -172,11 +216,11 @@ pipeline {
 
         // ------------------------------------------------------------------ //
         stage('Build App Image') {
-            // Only on main or tagged releases
             when {
                 anyOf {
                     branch 'main'
                     buildingTag()
+                    expression { params.DEPLOY_STAGING == true }
                 }
             }
             agent {
@@ -186,36 +230,135 @@ pipeline {
                 }
             }
             environment {
-                DOCKER_REGISTRY = credentials('docker-registry-url')
-                IMAGE_TAG = "${DOCKER_REGISTRY}/${SERVICE_NAME}:${env.GIT_TAG_NAME ?: env.GIT_COMMIT.take(8)}"
+                ACR_SERVER = credentials('acr-login-server')
+                // acr-credentials is a Username+Password credential (shared with frontend):
+                //   ACR_CREDENTIALS_USR = service principal App ID
+                //   ACR_CREDENTIALS_PSW = service principal client secret
+                ACR_CREDENTIALS = credentials('acr-credentials')
             }
             steps {
-                sh "docker build -t ${IMAGE_TAG} ."
-                sh "docker push ${IMAGE_TAG}"
                 script {
+                    // Derive image tag: git tag name for releases, short SHA otherwise
+                    def tag = env.GIT_TAG_NAME ?: env.GIT_COMMIT.take(8)
+                    env.BUILD_TAG  = tag
+                    env.FULL_IMAGE = "${env.ACR_SERVER}/${env.SERVICE_NAME}:${tag}"
+                }
+                sh 'echo "$ACR_CREDENTIALS_PSW" | docker login "$ACR_SERVER" -u "$ACR_CREDENTIALS_USR" --password-stdin'
+                // Pull :latest first so BuildKit can reuse unchanged layers (registry cache)
+                sh "docker pull ${env.ACR_SERVER}/${env.SERVICE_NAME}:latest || true"
+                sh """
+                    docker build \
+                        --cache-from ${env.ACR_SERVER}/${env.SERVICE_NAME}:latest \
+                        -t ${env.FULL_IMAGE} \
+                        .
+                """
+                sh "docker push ${env.FULL_IMAGE}"
+                script {
+                    // :latest is a convenience tag — never used directly by the deploy stages
                     if (env.BRANCH_NAME == 'main') {
-                        sh "docker tag ${IMAGE_TAG} ${DOCKER_REGISTRY}/${SERVICE_NAME}:latest"
-                        sh "docker push ${DOCKER_REGISTRY}/${SERVICE_NAME}:latest"
+                        def latestImage = "${env.ACR_SERVER}/${env.SERVICE_NAME}:latest"
+                        sh "docker tag ${env.FULL_IMAGE} ${latestImage}"
+                        sh "docker push ${latestImage}"
                     }
+                }
+            }
+            post {
+                always {
+                    sh 'docker logout "$ACR_SERVER" || true'
                 }
             }
         }
 
         // ------------------------------------------------------------------ //
         stage('Deploy to Staging') {
-            // Manual trigger only
             when {
-                expression { params.DEPLOY_STAGING == true }
+                anyOf {
+                    branch 'main'
+                    expression { params.DEPLOY_STAGING == true }
+                }
             }
+            // This agent must have the Azure CLI (az) installed.
+            // Install: https://learn.microsoft.com/en-us/cli/azure/install-azure-cli
             agent { label 'deploy' }
             environment {
-                DOCKER_REGISTRY = credentials('docker-registry-url')
-                IMAGE_TAG = "${DOCKER_REGISTRY}/${SERVICE_NAME}:${env.GIT_COMMIT.take(8)}"
+                // azure-sp is shared with the frontend (Username+Password):
+                //   AZURE_SP_USR = SP App ID, AZURE_SP_PSW = client secret
+                AZURE_SP        = credentials('azure-sp')
+                AZURE_TENANT_ID = credentials('azure-tenant-id')
+                AZURE_SUB_ID    = credentials('azure-sub-id')
+                ACA_RG          = credentials('aca-rg')
+                ACA_NAME        = credentials('aca-staging-name')
+                ACR_SERVER      = credentials('acr-login-server')
             }
             steps {
-                // TODO: Replace with your actual deploy script / Helm/kubectl command
-                echo "Deploying ${IMAGE_TAG} to staging..."
-                // sh './scripts/deploy.sh staging ${IMAGE_TAG}'
+                sh '''
+                    az login --service-principal \
+                        --username "$AZURE_SP_USR" \
+                        --password "$AZURE_SP_PSW" \
+                        --tenant   "$AZURE_TENANT_ID"
+                    az account set --subscription "$AZURE_SUB_ID"
+                '''
+                sh '''
+                    az containerapp update \
+                        --name           "$ACA_NAME" \
+                        --resource-group "$ACA_RG" \
+                        --image          "$ACR_SERVER/$SERVICE_NAME:$BUILD_TAG"
+                    az containerapp revision list \
+                        --name           "$ACA_NAME" \
+                        --resource-group "$ACA_RG" \
+                        --output         table
+                '''
+            }
+            post {
+                always {
+                    sh 'az logout || true'
+                }
+            }
+        }
+
+        // ------------------------------------------------------------------ //
+        stage('Deploy to Production') {
+            // Only triggered by a versioned git tag (e.g. v1.2.3).
+            // Requires a human to click "Deploy" in the Jenkins UI.
+            when { buildingTag() }
+            agent { label 'deploy' }
+            environment {
+                AZURE_SP        = credentials('azure-sp')
+                AZURE_TENANT_ID = credentials('azure-tenant-id')
+                AZURE_SUB_ID    = credentials('azure-sub-id')
+                ACA_RG          = credentials('aca-rg')
+                ACA_NAME        = credentials('aca-prod-name')
+                ACR_SERVER      = credentials('acr-login-server')
+            }
+            steps {
+                // Manual approval gate — times out after 30 min if no response
+                timeout(time: 30, unit: 'MINUTES') {
+                    input message: "Deploy ${env.GIT_TAG_NAME} to PRODUCTION?",
+                          ok: 'Deploy',
+                          submitter: 'release-managers'
+                }
+                sh '''
+                    az login --service-principal \
+                        --username "$AZURE_SP_USR" \
+                        --password "$AZURE_SP_PSW" \
+                        --tenant   "$AZURE_TENANT_ID"
+                    az account set --subscription "$AZURE_SUB_ID"
+                '''
+                sh '''
+                    az containerapp update \
+                        --name           "$ACA_NAME" \
+                        --resource-group "$ACA_RG" \
+                        --image          "$ACR_SERVER/$SERVICE_NAME:$BUILD_TAG"
+                    az containerapp revision list \
+                        --name           "$ACA_NAME" \
+                        --resource-group "$ACA_RG" \
+                        --output         table
+                '''
+            }
+            post {
+                always {
+                    sh 'az logout || true'
+                }
             }
         }
 
@@ -226,12 +369,16 @@ pipeline {
             cleanWs()
         }
         failure {
-            echo "Integration pipeline failed on branch ${env.BRANCH_NAME}."
+            echo "Pipeline failed on ${env.BRANCH_NAME ?: env.GIT_TAG_NAME ?: 'unknown ref'}."
         }
         success {
             script {
                 if (buildingTag()) {
-                    echo "Backend release ${env.GIT_TAG_NAME} built and pushed successfully."
+                    echo "Release ${env.GIT_TAG_NAME} (${env.BUILD_TAG}) deployed to production."
+                } else if (env.BRANCH_NAME == 'main') {
+                    echo "Build ${env.BUILD_TAG} deployed to staging."
+                } else {
+                    echo "CI passed for ${env.BRANCH_NAME}."
                 }
             }
         }

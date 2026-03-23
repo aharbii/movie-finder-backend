@@ -13,8 +13,9 @@
 # ---- Stage 1: builder -------------------------------------------------------
 FROM python:3.13-slim AS builder
 
-# Install uv
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+# Pin uv to a minor-version series for reproducible builds.
+# Bump this line when you want to upgrade uv.
+COPY --from=ghcr.io/astral-sh/uv:0.5 /uv /usr/local/bin/uv
 
 WORKDIR /build
 
@@ -44,11 +45,13 @@ RUN useradd --system --uid 1001 --no-create-home appuser
 
 WORKDIR /app
 
-# Copy only the pre-built venv and source tree from the builder
-COPY --from=builder /build/.venv /app/.venv
-COPY --from=builder /build/app/src ./src
-COPY --from=builder /build/chain/src ./chain_src
-COPY --from=builder /build/imdbapi/src ./imdbapi_src
+# Copy only the pre-built venv and source tree from the builder.
+# --link creates independent layers that BuildKit can cache and resolve in
+# parallel — safe to use with multi-stage copies.
+COPY --link --from=builder /build/.venv /app/.venv
+COPY --link --from=builder /build/app/src ./src
+COPY --link --from=builder /build/chain/src ./chain_src
+COPY --link --from=builder /build/imdbapi/src ./imdbapi_src
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -57,6 +60,13 @@ ENV PYTHONUNBUFFERED=1 \
 USER appuser
 
 EXPOSE 8000
+
+# Liveness probe used by Docker, docker-compose, and Azure Container Apps.
+# Uses stdlib urllib — no curl required in the slim image.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD python -c \
+        "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)" \
+        || exit 1
 
 CMD ["python", "-m", "uvicorn", "app.main:app", \
      "--host", "0.0.0.0", "--port", "8000", \

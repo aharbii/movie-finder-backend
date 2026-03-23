@@ -9,7 +9,7 @@
 # =============================================================================
 
 .PHONY: help setup check lint lint-fix type-check \
-        test test-chain test-imdbapi test-app test-rag test-all \
+        test test-ci test-chain test-imdbapi test-app test-rag test-all \
         run-dev \
         docker-up docker-down docker-chain docker-rag \
         submodules clean
@@ -41,7 +41,8 @@ help:
 	@echo "    check          Quick smoke test: imports + lint (no network)"
 	@echo ""
 	@echo "  Testing"
-	@echo "    test           pytest — all projects"
+	@echo "    test           pytest — all projects (human-friendly)"
+	@echo "    test-ci        pytest — all projects, JUnit XML → test-results/"
 	@echo "    test-chain     pytest — chain only"
 	@echo "    test-imdbapi   pytest — imdbapi only"
 	@echo "    test-app       pytest — app only"
@@ -128,6 +129,13 @@ run-dev:
 test:
 	uv sync --frozen --group test --quiet
 	uv run pytest $(WORKSPACE_TESTS) -v --tb=short
+
+test-ci:
+	mkdir -p test-results
+	uv sync --frozen --group test --quiet
+	APP_SECRET_KEY=ci-test-only uv run pytest $(WORKSPACE_TESTS) \
+	    --junitxml=test-results/results.xml \
+	    -v --tb=short
 
 test-chain:
 	uv sync --frozen --group test --quiet
