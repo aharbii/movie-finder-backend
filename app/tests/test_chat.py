@@ -592,3 +592,83 @@ class TestConfirmedMoviePersistence:
         session = await store.get_session(sid)
         assert session is not None
         assert session["confirmed_movie"] == movie_data
+
+
+# ---------------------------------------------------------------------------
+# DELETE /chat/{session_id}
+# ---------------------------------------------------------------------------
+
+
+class TestDeleteSession:
+    async def _make_session(
+        self,
+        client: httpx.AsyncClient,
+        auth_headers: dict[str, str],
+    ) -> str:
+        sid = new_session_id()
+        await client.post(
+            "/chat",
+            json={"session_id": sid, "message": "Hello"},
+            headers=auth_headers,
+        )
+        return sid
+
+    async def test_delete_returns_204(
+        self,
+        client: httpx.AsyncClient,
+        auth_headers: dict[str, str],
+    ) -> None:
+        sid = await self._make_session(client, auth_headers)
+        resp = await client.delete(f"/chat/{sid}", headers=auth_headers)
+        assert resp.status_code == 204
+
+    async def test_deleted_session_not_in_list(
+        self,
+        client: httpx.AsyncClient,
+        auth_headers: dict[str, str],
+    ) -> None:
+        sid = await self._make_session(client, auth_headers)
+        await client.delete(f"/chat/{sid}", headers=auth_headers)
+        body = (await client.get("/chat/sessions", headers=auth_headers)).json()
+        assert all(s["session_id"] != sid for s in body)
+
+    async def test_deleted_session_history_returns_404(
+        self,
+        client: httpx.AsyncClient,
+        auth_headers: dict[str, str],
+    ) -> None:
+        sid = await self._make_session(client, auth_headers)
+        await client.delete(f"/chat/{sid}", headers=auth_headers)
+        resp = await client.get(f"/chat/{sid}/history", headers=auth_headers)
+        assert resp.status_code == 404
+
+    async def test_delete_nonexistent_session_returns_404(
+        self,
+        client: httpx.AsyncClient,
+        auth_headers: dict[str, str],
+    ) -> None:
+        resp = await client.delete(f"/chat/{new_session_id()}", headers=auth_headers)
+        assert resp.status_code == 404
+
+    async def test_delete_other_users_session_returns_404(
+        self,
+        client: httpx.AsyncClient,
+        auth_headers: dict[str, str],
+    ) -> None:
+        other = await client.post(
+            "/auth/register",
+            json={
+                "email": "other_del@example.com",
+                "password": "password123",  # pragma: allowlist secret
+            },
+        )
+        other_headers = {"Authorization": f"Bearer {other.json()['access_token']}"}
+        sid = await self._make_session(client, other_headers)
+
+        # Original user tries to delete other user's session
+        resp = await client.delete(f"/chat/{sid}", headers=auth_headers)
+        assert resp.status_code == 404
+
+    async def test_unauthenticated_returns_401(self, client: httpx.AsyncClient) -> None:
+        resp = await client.delete(f"/chat/{new_session_id()}")
+        assert resp.status_code == 401

@@ -200,3 +200,32 @@ class TestConfirmedMovie:
         await store.create_session(uid)
         rows = await store.get_sessions(uid)
         assert rows[0].get("confirmed_movie") is None
+
+
+class TestDeleteSession:
+    async def _session_with_messages(self, store: SessionStore) -> tuple[str, str]:
+        user = await store.create_user("del@example.com", "pw")
+        session = await store.create_session(user.id)
+        sid = session["id"]
+        await store.append_message(sid, "user", "Hello")
+        await store.append_message(sid, "assistant", "Hi!")
+        return user.id, sid
+
+    async def test_delete_removes_session(self, store: SessionStore) -> None:
+        _, sid = await self._session_with_messages(store)
+        await store.delete_session(sid)
+        assert await store.get_session(sid) is None
+
+    async def test_delete_removes_messages(self, store: SessionStore) -> None:
+        _, sid = await self._session_with_messages(store)
+        await store.delete_session(sid)
+        assert await store.get_messages(sid) == []
+
+    async def test_delete_removes_from_session_list(self, store: SessionStore) -> None:
+        uid, sid = await self._session_with_messages(store)
+        await store.delete_session(sid)
+        assert await store.get_sessions(uid) == []
+
+    async def test_delete_nonexistent_session_is_noop(self, store: SessionStore) -> None:
+        """Deleting a session that doesn't exist should not raise."""
+        await store.delete_session("no-such-session")

@@ -190,6 +190,11 @@ class SessionStore:
         )
         await self._conn.commit()
 
+    async def delete_session(self, session_id: str) -> None:
+        await self._conn.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
+        await self._conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+        await self._conn.commit()
+
     async def _upsert_session(self, session_id: str, user_id: str) -> dict[str, Any]:
         now = _now()
         await self._conn.execute(

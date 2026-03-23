@@ -6,7 +6,7 @@ import json
 from collections.abc import AsyncGenerator
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.responses import StreamingResponse
 from langchain_core.messages import AIMessage, HumanMessage
 from pydantic import BaseModel
@@ -192,3 +192,17 @@ async def get_history(
         "confirmed_movie": session.get("confirmed_movie"),
     }
     return result
+
+
+@router.delete("/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_session(
+    session_id: str,
+    current_user: Annotated[UserInDB, Depends(get_current_user)],
+    store: Annotated[SessionStore, Depends(get_store)],
+) -> Response:
+    """Delete a session and all its messages. Only the owner may delete."""
+    session = await store.get_session(session_id)
+    if session is None or session["user_id"] != current_user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    await store.delete_session(session_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
