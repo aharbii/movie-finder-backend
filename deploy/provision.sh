@@ -172,12 +172,14 @@ echo "    ✓ $ACR_SERVER"
 # --------------------------------------------------------------------------- #
 
 echo ">>> [4/11] Creating Key Vault..."
-az keyvault create \
-    --name           "$KV_NAME" \
-    --resource-group "$RG" \
-    --location       "$LOCATION" \
-    --sku            standard \
-    --output         none
+if ! az keyvault show --name "$KV_NAME" --resource-group "$RG" --output none 2>/dev/null; then
+    az keyvault create \
+        --name           "$KV_NAME" \
+        --resource-group "$RG" \
+        --location       "$LOCATION" \
+        --sku            standard \
+        --output         none
+fi
 KV_URI="https://${KV_NAME}.vault.azure.net"
 KV_ID="$(az keyvault show --name "$KV_NAME" --resource-group "$RG" --query id -o tsv)"
 echo "    ✓ $KV_NAME ($KV_URI)"
@@ -211,21 +213,23 @@ echo "    ✓ 5 secrets stored (DATABASE-URL will be added after PostgreSQL is r
 echo ">>> [5/11] Creating Azure Database for PostgreSQL Flexible Server..."
 echo "    SKU: $PG_SKU  (Burstable tier — adjust in Variables section for higher load)"
 
-az postgres flexible-server create \
-    --name            "$PG_SERVER" \
-    --resource-group  "$RG" \
-    --location        "$LOCATION" \
-    --admin-user      "$PG_ADMIN_USER" \
-    --admin-password  "$PG_ADMIN_PASSWORD" \
-    --sku-name        "$PG_SKU" \
-    --tier            Burstable \
-    --version         16 \
-    --storage-size    32 \
-    --database-name   "$PG_DB" \
-    --public-access   0.0.0.0 \
-    --output          none
-# --public-access 0.0.0.0 creates the "Allow access to Azure services" firewall
-# rule, which permits Container Apps to connect to the server.
+if ! az postgres flexible-server show --name "$PG_SERVER" --resource-group "$RG" --output none 2>/dev/null; then
+    az postgres flexible-server create \
+        --name            "$PG_SERVER" \
+        --resource-group  "$RG" \
+        --location        "$LOCATION" \
+        --admin-user      "$PG_ADMIN_USER" \
+        --admin-password  "$PG_ADMIN_PASSWORD" \
+        --sku-name        "$PG_SKU" \
+        --tier            Burstable \
+        --version         16 \
+        --storage-size    32 \
+        --database-name   "$PG_DB" \
+        --public-access   0.0.0.0 \
+        --output          none
+    # --public-access 0.0.0.0 creates the "Allow access to Azure services" firewall
+    # rule, which permits Container Apps to connect to the server.
+fi
 
 PG_FQDN="${PG_SERVER}.postgres.database.azure.com"
 DATABASE_URL="postgresql://${PG_ADMIN_USER}:${PG_ADMIN_PASSWORD}@${PG_FQDN}/${PG_DB}?sslmode=require"
