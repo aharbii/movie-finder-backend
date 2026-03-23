@@ -35,3 +35,10 @@ disable_error_code = ["valid-type"]
 # across all chain nodes and imdbapi agent that instantiate ChatAnthropic.
 module = ["chain.nodes.*", "imdbapi.langchain.agent"]
 disable_error_code = ["call-arg"]
+
+[[tool.mypy.overrides]]
+# create_agent (langchain.agents) returns a Pregel whose ainvoke stubs don't
+# match dict[str, list[BaseMessage]] input — suppressed at the module level so
+# inline comments don't get stripped by the auto-formatter.
+module = "chain.nodes.qa_agent"
+disable_error_code = ["call-overload"]
