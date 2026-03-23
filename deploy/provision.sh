@@ -13,21 +13,21 @@
 # Prerequisites:
 #   • Azure CLI installed and logged in (az login)
 #   • Contributor or Owner role on the target subscription
-#   • The following env vars set (or edit the Variables section below):
-#       ANTHROPIC_API_KEY   OPENAI_API_KEY   IMDB_API_KEY
-#       IMDB_BASE_URL       QDRANT_ENDPOINT  QDRANT_API_KEY
-#       APP_SECRET_KEY
+#   • The following env vars set (or the script will prompt for them):
+#       ANTHROPIC_API_KEY   OPENAI_API_KEY
+#       QDRANT_ENDPOINT     QDRANT_API_KEY
+#       APP_SECRET_KEY      PG_ADMIN_PASSWORD
 #
-# What this script creates:
-#   Resource Group, Container Registry, Key Vault, Storage Account + File Share,
-#   Log Analytics Workspace, Container Apps Environment (with Azure Files mount),
-#   User-Assigned Managed Identity, Container App (first deploy), Service
-#   Principal for Jenkins CI/CD.
+# What this script creates (10 steps):
+#   Resource Group, Container Registry, Key Vault (5 secrets),
+#   Azure Database for PostgreSQL Flexible Server,
+#   Log Analytics Workspace, Container Apps Environment,
+#   User-Assigned Managed Identity (AcrPull + Key Vault),
+#   Container App (first deploy), Service Principal for Jenkins CI/CD.
 #
-# ⚠️  SQLite + Azure Files note:
-#   The app uses a single SQLite file on an Azure File Share mounted at /data.
-#   The Container App is capped at maxReplicas=1 to avoid multi-writer conflicts.
-#   If you ever need to scale beyond 1 replica, migrate to PostgreSQL first.
+# Note on the IMDb API:
+#   imdbapi.dev is a public API that requires no authentication.
+#   No IMDB_API_KEY or IMDB_BASE_URL secrets are needed.
 # =============================================================================
 
 set -euo pipefail
@@ -58,7 +58,7 @@ echo ""
 # 2. Variables — edit these to match your Azure environment
 # --------------------------------------------------------------------------- #
 
-LOCATION="eastus"                          # Azure region
+LOCATION="uaenorth"                        # Azure region (UAE North — closest to Egypt)
 SUBSCRIPTION_ID="$(az account show --query id -o tsv)"
 
 # Resource names (globally unique names use random suffix to avoid conflicts)
@@ -66,22 +66,27 @@ SUFFIX="${ENV}"                            # e.g. "staging" or "production"
 RG="rg-movie-finder-${SUFFIX}"
 ACR_NAME="acrmoviefinder"                  # globally unique, no hyphens, max 50 chars
 KV_NAME="kv-movie-finder-${SUFFIX}"       # globally unique, max 24 chars
-STORAGE_ACCOUNT="stmoviefinder${SUFFIX}"  # globally unique, lowercase, max 24 chars
-SHARE_NAME="movie-finder-db"
+PG_SERVER="pg-movie-finder-${SUFFIX}"     # globally unique, max 63 chars
+PG_DB="movie_finder"
+PG_ADMIN_USER="pgadmin"
 LOG_ANALYTICS="law-movie-finder-${SUFFIX}"
 ACA_ENV_NAME="cae-movie-finder-${SUFFIX}"
-ACA_STORAGE_NAME="sqlitedata"             # name within the ACA environment
 ACA_APP_NAME="ca-movie-finder-${SUFFIX}"
 IDENTITY_NAME="id-movie-finder-${SUFFIX}"
 SP_NAME="sp-movie-finder-cicd"            # shared across envs (one SP for CI/CD)
 
 SERVICE_NAME="movie-finder-backend"       # Docker image name in ACR
 
-# Scaling: staging can scale to zero; production keeps 1 warm replica
+# Scaling — staging can scale to zero; production keeps 1 warm replica
+# PostgreSQL supports concurrent connections so maxReplicas > 1 is safe.
 if [[ "$ENV" == "production" ]]; then
     MIN_REPLICAS=1
+    MAX_REPLICAS=4
+    PG_SKU="Standard_B2ms"
 else
     MIN_REPLICAS=0
+    MAX_REPLICAS=2
+    PG_SKU="Standard_B1ms"
 fi
 
 # Runtime secrets — read from environment or prompt if not set
@@ -98,11 +103,10 @@ get_secret() {
 
 ANTHROPIC_API_KEY="$(get_secret ANTHROPIC_API_KEY 'ANTHROPIC_API_KEY')"
 OPENAI_API_KEY="$(get_secret OPENAI_API_KEY 'OPENAI_API_KEY')"
-IMDB_API_KEY="$(get_secret IMDB_API_KEY 'IMDB_API_KEY')"
-IMDB_BASE_URL="$(get_secret IMDB_BASE_URL 'IMDB_BASE_URL')"
 QDRANT_ENDPOINT="$(get_secret QDRANT_ENDPOINT 'QDRANT_ENDPOINT')"
 QDRANT_API_KEY="$(get_secret QDRANT_API_KEY 'QDRANT_API_KEY')"
 APP_SECRET_KEY="$(get_secret APP_SECRET_KEY 'APP_SECRET_KEY (JWT signing secret)')"
+PG_ADMIN_PASSWORD="$(get_secret PG_ADMIN_PASSWORD 'PostgreSQL admin password (min 8 chars, must contain upper+lower+digit+symbol)')"
 
 echo ""
 echo "Target subscription: $SUBSCRIPTION_ID"
@@ -117,7 +121,7 @@ echo ""
 # 3. Resource Group
 # --------------------------------------------------------------------------- #
 
-echo ">>> [1/11] Creating resource group..."
+echo ">>> [1/10] Creating resource group..."
 az group create \
     --name     "$RG" \
     --location "$LOCATION" \
@@ -128,7 +132,7 @@ echo "    ✓ $RG"
 # 4. Azure Container Registry
 # --------------------------------------------------------------------------- #
 
-echo ">>> [2/11] Creating Azure Container Registry..."
+echo ">>> [2/10] Creating Azure Container Registry..."
 az acr create \
     --name           "$ACR_NAME" \
     --resource-group "$RG" \
@@ -140,10 +144,10 @@ ACR_ID="$(az acr show --name "$ACR_NAME" --resource-group "$RG" --query id -o ts
 echo "    ✓ $ACR_SERVER"
 
 # --------------------------------------------------------------------------- #
-# 5. Key Vault
+# 5. Key Vault  (DATABASE_URL stored after PostgreSQL is provisioned below)
 # --------------------------------------------------------------------------- #
 
-echo ">>> [3/11] Creating Key Vault..."
+echo ">>> [3/10] Creating Key Vault..."
 az keyvault create \
     --name           "$KV_NAME" \
     --resource-group "$RG" \
@@ -157,43 +161,46 @@ echo "    Storing secrets..."
 az keyvault secret set --vault-name "$KV_NAME" --name "APP-SECRET-KEY"    --value "$APP_SECRET_KEY"    --output none
 az keyvault secret set --vault-name "$KV_NAME" --name "ANTHROPIC-API-KEY" --value "$ANTHROPIC_API_KEY" --output none
 az keyvault secret set --vault-name "$KV_NAME" --name "OPENAI-API-KEY"    --value "$OPENAI_API_KEY"    --output none
-az keyvault secret set --vault-name "$KV_NAME" --name "IMDB-API-KEY"      --value "$IMDB_API_KEY"      --output none
-az keyvault secret set --vault-name "$KV_NAME" --name "IMDB-BASE-URL"     --value "$IMDB_BASE_URL"     --output none
 az keyvault secret set --vault-name "$KV_NAME" --name "QDRANT-ENDPOINT"   --value "$QDRANT_ENDPOINT"   --output none
 az keyvault secret set --vault-name "$KV_NAME" --name "QDRANT-API-KEY"    --value "$QDRANT_API_KEY"    --output none
-echo "    ✓ 7 secrets stored"
+echo "    ✓ 5 secrets stored (DATABASE-URL will be added after PostgreSQL is ready)"
 
 # --------------------------------------------------------------------------- #
-# 6. Storage Account + File Share (for SQLite persistence)
+# 6. Azure Database for PostgreSQL Flexible Server
 # --------------------------------------------------------------------------- #
 
-echo ">>> [4/11] Creating Storage Account and File Share..."
-az storage account create \
-    --name           "$STORAGE_ACCOUNT" \
-    --resource-group "$RG" \
-    --location       "$LOCATION" \
-    --sku            Standard_LRS \
-    --kind           StorageV2 \
-    --output         none
+echo ">>> [4/10] Creating Azure Database for PostgreSQL Flexible Server..."
+echo "    SKU: $PG_SKU  (Burstable tier — adjust in Variables section for higher load)"
 
-STORAGE_KEY="$(az storage account keys list \
-    --account-name   "$STORAGE_ACCOUNT" \
-    --resource-group "$RG" \
-    --query          '[0].value' -o tsv)"
-
-az storage share-rm create \
-    --storage-account "$STORAGE_ACCOUNT" \
+az postgres flexible-server create \
+    --name            "$PG_SERVER" \
     --resource-group  "$RG" \
-    --name            "$SHARE_NAME" \
-    --quota           1 \
+    --location        "$LOCATION" \
+    --admin-user      "$PG_ADMIN_USER" \
+    --admin-password  "$PG_ADMIN_PASSWORD" \
+    --sku-name        "$PG_SKU" \
+    --tier            Burstable \
+    --version         16 \
+    --storage-size    32 \
+    --database-name   "$PG_DB" \
+    --public-access   0.0.0.0 \
     --output          none
-echo "    ✓ File share: $SHARE_NAME (1 GiB quota)"
+# --public-access 0.0.0.0 creates the "Allow access to Azure services" firewall
+# rule, which permits Container Apps to connect to the server.
+
+PG_FQDN="${PG_SERVER}.postgres.database.azure.com"
+DATABASE_URL="postgresql://${PG_ADMIN_USER}:${PG_ADMIN_PASSWORD}@${PG_FQDN}/${PG_DB}?sslmode=require"
+
+az keyvault secret set --vault-name "$KV_NAME" --name "DATABASE-URL" --value "$DATABASE_URL" --output none
+echo "    ✓ $PG_SERVER ($PG_FQDN)"
+echo "    ✓ Database: $PG_DB"
+echo "    ✓ DATABASE-URL stored in Key Vault"
 
 # --------------------------------------------------------------------------- #
 # 7. Log Analytics Workspace (required by Container Apps Environment)
 # --------------------------------------------------------------------------- #
 
-echo ">>> [5/11] Creating Log Analytics Workspace..."
+echo ">>> [5/10] Creating Log Analytics Workspace..."
 az monitor log-analytics workspace create \
     --workspace-name "$LOG_ANALYTICS" \
     --resource-group "$RG" \
@@ -214,7 +221,7 @@ echo "    ✓ $LOG_ANALYTICS"
 # 8. User-Assigned Managed Identity
 # --------------------------------------------------------------------------- #
 
-echo ">>> [6/11] Creating Managed Identity..."
+echo ">>> [6/10] Creating Managed Identity..."
 az identity create \
     --name           "$IDENTITY_NAME" \
     --resource-group "$RG" \
@@ -234,7 +241,7 @@ IDENTITY_PRINCIPAL_ID="$(az identity show \
     --resource-group "$RG" \
     --query          principalId -o tsv)"
 
-# Grant the identity permission to pull images from ACR
+# Pull images from ACR
 az role assignment create \
     --assignee-object-id    "$IDENTITY_PRINCIPAL_ID" \
     --assignee-principal-type ServicePrincipal \
@@ -242,19 +249,20 @@ az role assignment create \
     --scope                 "$ACR_ID" \
     --output                none
 
-# Grant the identity permission to read Key Vault secrets
+# Read secrets from Key Vault
 az keyvault set-policy \
     --name             "$KV_NAME" \
     --object-id        "$IDENTITY_PRINCIPAL_ID" \
     --secret-permissions get list \
     --output           none
+
 echo "    ✓ $IDENTITY_NAME (AcrPull + Key Vault get/list)"
 
 # --------------------------------------------------------------------------- #
 # 9. Container Apps Environment
 # --------------------------------------------------------------------------- #
 
-echo ">>> [7/11] Creating Container Apps Environment..."
+echo ">>> [7/10] Creating Container Apps Environment..."
 az containerapp env create \
     --name                              "$ACA_ENV_NAME" \
     --resource-group                    "$RG" \
@@ -262,32 +270,24 @@ az containerapp env create \
     --logs-workspace-id                 "$LAW_ID" \
     --logs-workspace-key                "$LAW_KEY" \
     --output                            none
-
-# Attach the Azure File Share to the environment so Container Apps can mount it
-az containerapp env storage set \
-    --name                    "$ACA_ENV_NAME" \
-    --resource-group          "$RG" \
-    --storage-name            "$ACA_STORAGE_NAME" \
-    --azure-file-account-name "$STORAGE_ACCOUNT" \
-    --azure-file-account-key  "$STORAGE_KEY" \
-    --azure-file-share-name   "$SHARE_NAME" \
-    --access-mode             ReadWrite \
-    --output                  none
-echo "    ✓ $ACA_ENV_NAME (with Azure Files storage: $ACA_STORAGE_NAME)"
+echo "    ✓ $ACA_ENV_NAME"
 
 # --------------------------------------------------------------------------- #
 # 10. Container App (initial provision with placeholder image)
 # --------------------------------------------------------------------------- #
 
-echo ">>> [8/11] Creating Container App..."
+echo ">>> [8/10] Creating Container App..."
 
-# Build the Container App definition as YAML so the volume mount, secrets,
-# and managed identity are all configured in one atomic create call.
+ACA_ENV_ID="$(az containerapp env show \
+    --name           "$ACA_ENV_NAME" \
+    --resource-group "$RG" \
+    --query          id -o tsv)"
+
 ACA_YAML="$(mktemp /tmp/containerapp-XXXXXX.yaml)"
 
 cat > "$ACA_YAML" << YAML
 properties:
-  managedEnvironmentId: $(az containerapp env show --name "$ACA_ENV_NAME" --resource-group "$RG" --query id -o tsv)
+  managedEnvironmentId: ${ACA_ENV_ID}
   configuration:
     activeRevisionsMode: Single
     ingress:
@@ -302,17 +302,14 @@ properties:
     - name: app-secret-key
       keyVaultUrl: ${KV_URI}/secrets/APP-SECRET-KEY
       identity: ${IDENTITY_ID}
+    - name: database-url
+      keyVaultUrl: ${KV_URI}/secrets/DATABASE-URL
+      identity: ${IDENTITY_ID}
     - name: anthropic-api-key
       keyVaultUrl: ${KV_URI}/secrets/ANTHROPIC-API-KEY
       identity: ${IDENTITY_ID}
     - name: openai-api-key
       keyVaultUrl: ${KV_URI}/secrets/OPENAI-API-KEY
-      identity: ${IDENTITY_ID}
-    - name: imdb-api-key
-      keyVaultUrl: ${KV_URI}/secrets/IMDB-API-KEY
-      identity: ${IDENTITY_ID}
-    - name: imdb-base-url
-      keyVaultUrl: ${KV_URI}/secrets/IMDB-BASE-URL
       identity: ${IDENTITY_ID}
     - name: qdrant-endpoint
       keyVaultUrl: ${KV_URI}/secrets/QDRANT-ENDPOINT
@@ -334,8 +331,6 @@ properties:
         value: ${ENV}
       - name: APP_PORT
         value: "8000"
-      - name: DATABASE_URL
-        value: /data/movie_finder.db
       - name: QDRANT_COLLECTION
         value: movies
       - name: EMBEDDING_MODEL
@@ -354,33 +349,22 @@ properties:
         value: INFO
       - name: LANGSMITH_TRACING
         value: "false"
-      # Sensitive — pulled from Key Vault via the managed identity at runtime
+      # Sensitive — injected from Key Vault via the managed identity at runtime
       - name: APP_SECRET_KEY
         secretRef: app-secret-key
+      - name: DATABASE_URL
+        secretRef: database-url
       - name: ANTHROPIC_API_KEY
         secretRef: anthropic-api-key
       - name: OPENAI_API_KEY
         secretRef: openai-api-key
-      - name: IMDB_API_KEY
-        secretRef: imdb-api-key
-      - name: IMDB_BASE_URL
-        secretRef: imdb-base-url
       - name: QDRANT_ENDPOINT
         secretRef: qdrant-endpoint
       - name: QDRANT_API_KEY
         secretRef: qdrant-api-key
-      volumeMounts:
-      - volumeName: sqlite-vol
-        mountPath: /data
-    volumes:
-    - name: sqlite-vol
-      storageType: AzureFile
-      storageName: ${ACA_STORAGE_NAME}
     scale:
       minReplicas: ${MIN_REPLICAS}
-      # ⚠️  Hard limit: SQLite is single-writer. Do NOT raise this above 1
-      # without first migrating the database to PostgreSQL.
-      maxReplicas: 1
+      maxReplicas: ${MAX_REPLICAS}
   identity:
     type: UserAssigned
     userAssignedIdentities:
@@ -406,16 +390,22 @@ echo "    URL: https://$APP_FQDN"
 # 11. Service Principal for Jenkins CI/CD
 # --------------------------------------------------------------------------- #
 
-echo ">>> [9/11] Creating Jenkins CI/CD Service Principal..."
+echo ">>> [9/10] Creating Jenkins CI/CD Service Principal..."
 
 RG_ID="$(az group show --name "$RG" --query id -o tsv)"
 
-# Check if SP already exists (idempotent for multi-env runs)
+# Idempotent — skip creation if the SP already exists (e.g. second env run)
 SP_EXISTS="$(az ad sp list --display-name "$SP_NAME" --query '[0].appId' -o tsv 2>/dev/null || true)"
 
 if [[ -n "$SP_EXISTS" ]]; then
     echo "    Service principal '$SP_NAME' already exists (App ID: $SP_EXISTS)"
-    echo "    Skipping creation — use the credentials stored from the first run."
+    echo "    Granting Contributor on new resource group..."
+    az role assignment create \
+        --assignee "$SP_EXISTS" \
+        --role     "Contributor" \
+        --scope    "$RG_ID" \
+        --output   none
+    echo "    Use the credentials stored from the first run."
     SP_APP_ID="$SP_EXISTS"
 else
     SP_JSON="$(az ad sp create-for-rbac \
@@ -423,9 +413,9 @@ else
         --role        "Contributor" \
         --scopes      "$RG_ID" \
         --output      json)"
-    SP_APP_ID="$(echo "$SP_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['appId'])")"
+    SP_APP_ID="$(echo  "$SP_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['appId'])")"
     SP_PASSWORD="$(echo "$SP_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['password'])")"
-    SP_TENANT="$(echo "$SP_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['tenant'])")"
+    SP_TENANT="$(echo  "$SP_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['tenant'])")"
 
     # Grant AcrPush so Jenkins can push images
     az role assignment create \
@@ -435,60 +425,71 @@ else
         --output   none
 
     echo ""
-    echo "    ┌─────────────────────────────────────────────────────────┐"
-    echo "    │  Jenkins credentials — add these now, then DELETE them  │"
-    echo "    │  from your terminal history / this output               │"
-    echo "    └─────────────────────────────────────────────────────────┘"
+    echo "    ┌───────────────────────────────────────────────────────────────────┐"
+    echo "    │   Jenkins credentials — add these NOW, then clear terminal history │"
+    echo "    └───────────────────────────────────────────────────────────────────┘"
     echo ""
-    echo "    Credential ID: azure-sp-app-id     Value: $SP_APP_ID"
-    echo "    Credential ID: azure-sp-password   Value: $SP_PASSWORD"
-    echo "    Credential ID: azure-tenant-id     Value: $SP_TENANT"
-    echo "    Credential ID: azure-sub-id        Value: $SUBSCRIPTION_ID"
-    echo "    Credential ID: acr-login-server    Value: $ACR_SERVER"
+    echo "    ── Shared with frontend pipeline (create once) ──────────────────────"
     echo ""
-    echo "    For docker login (Username+Password credential 'azure-acr-sp'):"
-    echo "      Username: $SP_APP_ID"
-    echo "      Password: $SP_PASSWORD"
+    echo "    ID: acr-login-server        Type: Secret Text"
+    echo "        Value: $ACR_SERVER"
+    echo ""
+    echo "    ID: acr-credentials         Type: Username + Password"
+    echo "        Username: $SP_APP_ID"
+    echo "        Password: $SP_PASSWORD"
+    echo ""
+    echo "    ID: azure-sp                Type: Username + Password"
+    echo "        Username: $SP_APP_ID"
+    echo "        Password: $SP_PASSWORD"
+    echo ""
+    echo "    ── Backend-specific ─────────────────────────────────────────────────"
+    echo ""
+    echo "    ID: azure-tenant-id         Type: Secret Text"
+    echo "        Value: $SP_TENANT"
+    echo ""
+    echo "    ID: azure-sub-id            Type: Secret Text"
+    echo "        Value: $SUBSCRIPTION_ID"
     echo ""
 fi
 
 # --------------------------------------------------------------------------- #
-# 12. Remaining Jenkins credentials (no secrets involved)
+# 12. Remaining Jenkins credentials (resource names, no secrets)
 # --------------------------------------------------------------------------- #
 
-echo ">>> [10/11] Remaining Jenkins credentials to add..."
+echo ">>> [10/10] Additional Jenkins credentials to add..."
 echo ""
-echo "    Credential ID: aca-rg             Value: $RG"
-echo "    Credential ID: aca-${SUFFIX}-name Value: $ACA_APP_NAME"
+echo "    ID: aca-rg                  Type: Secret Text"
+echo "        Value: $RG"
+echo ""
+echo "    ID: aca-${SUFFIX}-name      Type: Secret Text"
+echo "        Value: $ACA_APP_NAME"
 echo ""
 
 # --------------------------------------------------------------------------- #
-# 13. Summary
+# Summary
 # --------------------------------------------------------------------------- #
 
-echo ">>> [11/11] Done."
-echo ""
 echo "============================================="
 echo " Provisioning complete: movie-finder ($ENV)"
 echo "============================================="
 echo ""
-echo "  Container App URL : https://$APP_FQDN"
-echo "  ACR               : $ACR_SERVER"
-echo "  Key Vault         : $KV_URI"
-echo "  SQLite mount      : /data/movie_finder.db (Azure Files)"
-echo "  Resource Group    : $RG"
+echo "  Container App URL  : https://$APP_FQDN"
+echo "  ACR                : $ACR_SERVER"
+echo "  Key Vault          : $KV_URI"
+echo "  PostgreSQL server  : $PG_FQDN"
+echo "  PostgreSQL database: $PG_DB"
+echo "  Resource Group     : $RG"
 echo ""
 echo "Next steps:"
 echo "  1. Add the Jenkins credentials printed above."
-echo "  2. Configure the GitHub webhook:"
+echo "  2. If provisioning a second environment, run this script again."
+echo "     The SP '$SP_NAME' will be reused and granted Contributor on the new RG."
+echo "  3. Configure the GitHub webhook:"
 echo "       GitHub repo → Settings → Webhooks → Add webhook"
-echo "       Payload URL : https://<your-jenkins-host>/github-webhook/"
+echo "       Payload URL : https://<your-ngrok-host>/github-webhook/"
 echo "       Content type: application/json"
 echo "       Events      : Push, Pull request"
-echo "  3. Push to main (or tag a release) to trigger the first real deploy."
-echo "  4. Verify the app is healthy:"
+echo "  4. Push to main (or tag a release) to trigger the first real deploy."
+echo "  5. Verify the app is healthy after the first Jenkins build:"
 echo "       curl https://$APP_FQDN/health"
-echo ""
-echo "⚠️  Reminder: $ACA_APP_NAME is capped at maxReplicas=1 (SQLite constraint)."
-echo "   Raise this only after migrating to PostgreSQL."
 echo ""
