@@ -9,6 +9,7 @@ Manages three tables:
 
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -59,11 +60,12 @@ class SessionStore:
             );
 
             CREATE TABLE IF NOT EXISTS sessions (
-                id         TEXT PRIMARY KEY,
-                user_id    TEXT NOT NULL,
-                phase      TEXT NOT NULL DEFAULT 'discovery',
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL,
+                id              TEXT PRIMARY KEY,
+                user_id         TEXT NOT NULL,
+                phase           TEXT NOT NULL DEFAULT 'discovery',
+                created_at      TEXT NOT NULL,
+                updated_at      TEXT NOT NULL,
+                confirmed_movie TEXT,
                 FOREIGN KEY (user_id) REFERENCES users(id)
             );
 
@@ -76,7 +78,14 @@ class SessionStore:
                 FOREIGN KEY (session_id) REFERENCES sessions(id)
             );
         """)
-        await self._conn.commit()
+        # Migrate existing databases that predate the confirmed_movie column.
+        # SQLite does not support ALTER TABLE … ADD COLUMN IF NOT EXISTS, so we
+        # attempt it and ignore the error when the column already exists.
+        try:
+            await self._conn.execute("ALTER TABLE sessions ADD COLUMN confirmed_movie TEXT")
+            await self._conn.commit()
+        except Exception:
+            pass  # column already present — nothing to do
 
     # ------------------------------------------------------------------
     # Users
@@ -124,20 +133,26 @@ class SessionStore:
 
     async def get_session(self, session_id: str) -> dict[str, Any] | None:
         async with self._conn.execute(
-            "SELECT id, user_id, phase, created_at, updated_at FROM sessions WHERE id = ?",
+            "SELECT id, user_id, phase, created_at, updated_at, confirmed_movie FROM sessions WHERE id = ?",
             (session_id,),
         ) as cur:
             row = await cur.fetchone()
-        return dict(row) if row else None
+        if row is None:
+            return None
+        result = dict(row)
+        if result.get("confirmed_movie"):
+            result["confirmed_movie"] = json.loads(result["confirmed_movie"])
+        return result
 
     async def get_sessions(self, user_id: str) -> list[dict[str, Any]]:
         """Return all sessions for *user_id*, newest first, with first user message."""
         async with self._conn.execute(
             """
             SELECT
-                s.id         AS session_id,
+                s.id              AS session_id,
                 s.phase,
                 s.updated_at,
+                s.confirmed_movie,
                 (
                     SELECT m.content
                     FROM   messages m
@@ -153,12 +168,25 @@ class SessionStore:
             (user_id,),
         ) as cur:
             rows = await cur.fetchall()
-        return [dict(r) for r in rows]
+        results = []
+        for row in rows:
+            r = dict(row)
+            if r.get("confirmed_movie"):
+                r["confirmed_movie"] = json.loads(r["confirmed_movie"])
+            results.append(r)
+        return results
 
     async def update_session_phase(self, session_id: str, phase: str) -> None:
         await self._conn.execute(
             "UPDATE sessions SET phase = ?, updated_at = ? WHERE id = ?",
             (phase, _now(), session_id),
+        )
+        await self._conn.commit()
+
+    async def set_confirmed_movie(self, session_id: str, data: dict[str, Any]) -> None:
+        await self._conn.execute(
+            "UPDATE sessions SET confirmed_movie = ?, updated_at = ? WHERE id = ?",
+            (json.dumps(data), _now(), session_id),
         )
         await self._conn.commit()
 

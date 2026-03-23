@@ -479,3 +479,116 @@ class TestListSessions:
     async def test_unauthenticated_returns_401(self, client: httpx.AsyncClient) -> None:
         resp = await client.get("/chat/sessions")
         assert resp.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# confirmed_movie persistence
+# ---------------------------------------------------------------------------
+
+
+class TestConfirmedMoviePersistence:
+    async def test_history_includes_confirmed_movie_field(
+        self,
+        client: httpx.AsyncClient,
+        auth_headers: dict[str, str],
+        store: SessionStore,
+    ) -> None:
+        """GET /chat/{session_id}/history always includes confirmed_movie key."""
+        sid = new_session_id()
+        await client.post(
+            "/chat",
+            json={"session_id": sid, "message": "Hello"},
+            headers=auth_headers,
+        )
+        body = (await client.get(f"/chat/{sid}/history", headers=auth_headers)).json()
+        assert "confirmed_movie" in body
+
+    async def test_history_confirmed_movie_null_before_qa(
+        self,
+        client: httpx.AsyncClient,
+        auth_headers: dict[str, str],
+        store: SessionStore,
+    ) -> None:
+        sid = new_session_id()
+        await client.post(
+            "/chat",
+            json={"session_id": sid, "message": "Hello"},
+            headers=auth_headers,
+        )
+        body = (await client.get(f"/chat/{sid}/history", headers=auth_headers)).json()
+        assert body["confirmed_movie"] is None
+
+    async def test_history_confirmed_movie_populated_after_set(
+        self,
+        client: httpx.AsyncClient,
+        auth_headers: dict[str, str],
+        store: SessionStore,
+    ) -> None:
+        """When the store has a confirmed_movie, it appears in GET history."""
+        sid = new_session_id()
+        await client.post(
+            "/chat",
+            json={"session_id": sid, "message": "Hello"},
+            headers=auth_headers,
+        )
+        movie = {"imdb_id": "tt1375666", "imdb_title": "Inception", "imdb_year": 2010}
+        await store.set_confirmed_movie(sid, movie)
+        body = (await client.get(f"/chat/{sid}/history", headers=auth_headers)).json()
+        assert body["confirmed_movie"] == movie
+
+    async def test_sessions_confirmed_movie_populated_after_set(
+        self,
+        client: httpx.AsyncClient,
+        auth_headers: dict[str, str],
+        store: SessionStore,
+    ) -> None:
+        """When the store has a confirmed_movie, it appears in GET /chat/sessions."""
+        sid = new_session_id()
+        await client.post(
+            "/chat",
+            json={"session_id": sid, "message": "Hello"},
+            headers=auth_headers,
+        )
+        movie = {"imdb_id": "tt0133093", "imdb_title": "The Matrix", "imdb_year": 1999}
+        await store.set_confirmed_movie(sid, movie)
+        body = (await client.get("/chat/sessions", headers=auth_headers)).json()
+        assert body[0]["confirmed_movie"] == movie
+
+    async def test_set_confirmed_movie_called_on_qa_phase(
+        self,
+        store: SessionStore,
+        registered_user: tuple[str, str, str],
+        make_mock_graph: Any,
+        noop_lifespan: Any,
+    ) -> None:
+        """When graph outputs phase=qa with confirmed_movie_data, it is persisted."""
+        from app.dependencies import get_graph, get_store
+        from app.main import app
+
+        movie_data = {"imdb_id": "tt1375666", "imdb_title": "Inception", "imdb_year": 2010}
+        graph_qa = make_mock_graph(phase="qa", confirmed_movie_data=movie_data)
+
+        app.dependency_overrides[get_store] = lambda: store
+        app.dependency_overrides[get_graph] = lambda: graph_qa
+        original = app.router.lifespan_context
+        app.router.lifespan_context = noop_lifespan
+
+        sid = new_session_id()
+        try:
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app),  # type: ignore[arg-type]
+                base_url="http://test",
+            ) as c:
+                _, _, token = registered_user
+                await c.post(
+                    "/chat",
+                    json={"session_id": sid, "message": "I pick Inception"},
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+        finally:
+            app.router.lifespan_context = original
+            app.dependency_overrides.clear()
+
+        session = await store.get_session(sid)
+        assert session is not None
+        assert session["confirmed_movie"] == movie_data

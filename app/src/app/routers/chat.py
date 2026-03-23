@@ -54,6 +54,7 @@ class SessionSummary(BaseModel):
     phase: str
     updated_at: str
     first_message: str | None = None
+    confirmed_movie: dict[str, Any] | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -120,6 +121,8 @@ async def _stream_reply(
     if reply_text:
         await store.append_message(session_id, "assistant", reply_text)
     await store.update_session_phase(session_id, phase)
+    if phase == "qa" and final_output.get("confirmed_movie_data"):
+        await store.set_confirmed_movie(session_id, final_output["confirmed_movie_data"])
 
     # Final done event --------------------------------------------------------
     result: dict[str, Any] = {
@@ -182,8 +185,10 @@ async def get_history(
     if session is None or session["user_id"] != current_user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
     messages = await store.get_messages(session_id)
-    return {
+    result: dict[str, Any] = {
         "session_id": session_id,
         "phase": session["phase"],
         "messages": messages,
+        "confirmed_movie": session.get("confirmed_movie"),
     }
+    return result

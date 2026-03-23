@@ -160,3 +160,43 @@ class TestMessages:
         messages = await store.get_messages(sid)
         contents = [m["content"] for m in messages]
         assert contents == [f"msg-{i}" for i in range(5)]
+
+
+class TestConfirmedMovie:
+    async def _session(self, store: SessionStore) -> str:
+        user = await store.create_user("cm@example.com", "pw")
+        session = await store.create_session(user.id)
+        return session["id"]
+
+    async def test_confirmed_movie_null_by_default(self, store: SessionStore) -> None:
+        sid = await self._session(store)
+        session = await store.get_session(sid)
+        assert session is not None
+        assert session.get("confirmed_movie") is None
+
+    async def test_set_confirmed_movie_persists(self, store: SessionStore) -> None:
+        sid = await self._session(store)
+        data = {"imdb_id": "tt1375666", "imdb_title": "Inception", "imdb_year": 2010}
+        await store.set_confirmed_movie(sid, data)
+        session = await store.get_session(sid)
+        assert session is not None
+        assert session["confirmed_movie"] == data
+
+    async def test_confirmed_movie_returned_in_get_sessions(self, store: SessionStore) -> None:
+        user = await store.create_user("cm2@example.com", "pw")
+        uid = user.id
+        session = await store.create_session(uid)
+        sid = session["id"]
+        data = {"imdb_id": "tt0133093", "imdb_title": "The Matrix", "imdb_year": 1999}
+        await store.set_confirmed_movie(sid, data)
+        rows = await store.get_sessions(uid)
+        assert rows[0]["confirmed_movie"] == data
+
+    async def test_confirmed_movie_null_in_get_sessions_when_unset(
+        self, store: SessionStore
+    ) -> None:
+        user = await store.create_user("cm3@example.com", "pw")
+        uid = user.id
+        await store.create_session(uid)
+        rows = await store.get_sessions(uid)
+        assert rows[0].get("confirmed_movie") is None
