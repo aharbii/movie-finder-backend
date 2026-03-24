@@ -55,7 +55,10 @@ COPY --link --from=builder /build/imdbapi/src ./imdbapi_src
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PATH="/app/.venv/bin:$PATH"
+    PATH="/app/.venv/bin:$PATH" \
+    PYTHONPATH="/app/src:/app/chain_src:/app/imdbapi_src"
+
+RUN mkdir -p /app/logs && chown appuser /app/logs
 
 USER appuser
 
