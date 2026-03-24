@@ -334,9 +334,7 @@ pipeline {
                     expression { params.DEPLOY_STAGING == true }
                 }
             }
-            // This agent must have the Azure CLI (az) installed.
-            // Install: https://learn.microsoft.com/en-us/cli/azure/install-azure-cli
-            agent { label 'deploy' }
+            agent any
             environment {
                 // azure-sp is shared with the frontend (Username+Password):
                 //   AZURE_SP_USR = SP App ID, AZURE_SP_PSW = client secret
@@ -378,7 +376,7 @@ pipeline {
             // Only triggered by a versioned git tag (e.g. v1.2.3).
             // Requires a human to click "Deploy" in the Jenkins UI.
             when { buildingTag() }
-            agent { label 'deploy' }
+            agent any
             environment {
                 AZURE_SP        = credentials('azure-sp')
                 AZURE_TENANT_ID = credentials('azure-tenant-id')
