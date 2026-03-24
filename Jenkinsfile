@@ -32,10 +32,12 @@
 //   aca-prod-name      Secret Text      Production Container App name
 //
 // Jenkins plugins required:
-//   GitHub, Docker Pipeline, JUnit, Cobertura, Credentials Binding, Git
+//   GitHub, Docker, JUnit, Cobertura, Credentials Binding, Git
+//   Note: uses "docker run" in steps (not Docker Pipeline agent) so that
+//   the Docker Pipeline plugin is NOT required.
 //
 // Jenkins agent labels required:
-//   any     — generic agent with Docker available (for checkout + lint + test)
+//   any     — generic agent with Docker available (for all build/test stages)
 //   deploy  — agent with Azure CLI (az) installed (for deploy stages)
 // =============================================================================
 
@@ -59,7 +61,6 @@ pipeline {
     environment {
         SERVICE_NAME = 'movie-finder-backend'
         UV_IMAGE     = 'ghcr.io/astral-sh/uv:python3.13-bookworm-slim'
-        DOCKER_IMAGE = 'docker:24-dind'
     }
 
     stages {
@@ -77,35 +78,50 @@ pipeline {
             parallel {
 
                 stage('Lint — chain') {
-                    agent { docker { image "${UV_IMAGE}" } }
+                    agent { label 'any' }
                     steps {
-                        // chain is a workspace member — run from workspace root
-                        sh 'uv sync --frozen --group lint'
-                        sh 'uv run ruff check chain/src/ chain/tests/'
-                        sh 'uv run ruff format --check chain/src/ chain/tests/'
-                        sh 'uv run mypy chain/src/'
+                        sh """
+                            docker run --rm \
+                                -v "\$(pwd)":/workspace \
+                                -w /workspace \
+                                ${UV_IMAGE} \
+                                sh -c 'uv sync --frozen --group lint && \
+                                       uv run ruff check chain/src/ chain/tests/ && \
+                                       uv run ruff format --check chain/src/ chain/tests/ && \
+                                       uv run mypy chain/src/'
+                        """
                     }
                 }
 
                 stage('Lint — imdbapi') {
-                    agent { docker { image "${UV_IMAGE}" } }
+                    agent { label 'any' }
                     steps {
-                        // imdbapi is a workspace member — run from workspace root
-                        // (do NOT cd into imdbapi/; its lockfile is at the workspace root)
-                        sh 'uv sync --frozen --group lint'
-                        sh 'uv run ruff check imdbapi/src/ imdbapi/tests/'
-                        sh 'uv run ruff format --check imdbapi/src/ imdbapi/tests/'
-                        sh 'uv run mypy imdbapi/src/'
+                        sh """
+                            docker run --rm \
+                                -v "\$(pwd)":/workspace \
+                                -w /workspace \
+                                ${UV_IMAGE} \
+                                sh -c 'uv sync --frozen --group lint && \
+                                       uv run ruff check imdbapi/src/ imdbapi/tests/ && \
+                                       uv run ruff format --check imdbapi/src/ imdbapi/tests/ && \
+                                       uv run mypy imdbapi/src/'
+                        """
                     }
                 }
 
                 stage('Lint — app') {
-                    agent { docker { image "${UV_IMAGE}" } }
+                    agent { label 'any' }
                     steps {
-                        sh 'uv sync --frozen --group lint'
-                        sh 'uv run ruff check app/src/ app/tests/'
-                        sh 'uv run ruff format --check app/src/ app/tests/'
-                        sh 'uv run mypy app/src/'
+                        sh """
+                            docker run --rm \
+                                -v "\$(pwd)":/workspace \
+                                -w /workspace \
+                                ${UV_IMAGE} \
+                                sh -c 'uv sync --frozen --group lint && \
+                                       uv run ruff check app/src/ app/tests/ && \
+                                       uv run ruff format --check app/src/ app/tests/ && \
+                                       uv run mypy app/src/'
+                        """
                     }
                 }
 
@@ -117,16 +133,20 @@ pipeline {
             parallel {
 
                 stage('Test — chain') {
-                    agent { docker { image "${UV_IMAGE}" } }
+                    agent { label 'any' }
                     steps {
-                        sh 'uv sync --frozen --group test'
-                        sh '''
-                            uv run pytest chain/tests/ \
-                                --cov=chain/src \
-                                --cov-report=xml:chain-coverage.xml \
-                                --junitxml=chain-test-results.xml \
-                                -v --tb=short
-                        '''
+                        sh """
+                            docker run --rm \
+                                -v "\$(pwd)":/workspace \
+                                -w /workspace \
+                                ${UV_IMAGE} \
+                                sh -c 'uv sync --frozen --group test && \
+                                       uv run pytest chain/tests/ \
+                                           --cov=chain/src \
+                                           --cov-report=xml:chain-coverage.xml \
+                                           --junitxml=chain-test-results.xml \
+                                           -v --tb=short'
+                        """
                     }
                     post {
                         always {
@@ -138,17 +158,20 @@ pipeline {
                 }
 
                 stage('Test — imdbapi') {
-                    agent { docker { image "${UV_IMAGE}" } }
+                    agent { label 'any' }
                     steps {
-                        // Run from workspace root — imdbapi is a workspace member
-                        sh 'uv sync --frozen --group test'
-                        sh '''
-                            uv run pytest imdbapi/tests/ \
-                                --cov=imdbapi/src \
-                                --cov-report=xml:imdbapi-coverage.xml \
-                                --junitxml=imdbapi-test-results.xml \
-                                -v --tb=short
-                        '''
+                        sh """
+                            docker run --rm \
+                                -v "\$(pwd)":/workspace \
+                                -w /workspace \
+                                ${UV_IMAGE} \
+                                sh -c 'uv sync --frozen --group test && \
+                                       uv run pytest imdbapi/tests/ \
+                                           --cov=imdbapi/src \
+                                           --cov-report=xml:imdbapi-coverage.xml \
+                                           --junitxml=imdbapi-test-results.xml \
+                                           -v --tb=short'
+                        """
                     }
                     post {
                         always {
@@ -210,19 +233,22 @@ pipeline {
                 }
 
                 stage('Test — rag_ingestion') {
-                    agent { docker { image "${UV_IMAGE}" } }
+                    agent { label 'any' }
                     steps {
-                        // rag_ingestion is NOT a workspace member — it has its own lockfile
-                        dir('rag_ingestion') {
-                            sh 'uv sync --frozen --group test'
-                            sh '''
-                                uv run pytest tests/ \
-                                    --cov=src \
-                                    --cov-report=xml:rag-coverage.xml \
-                                    --junitxml=rag-test-results.xml \
-                                    -v --tb=short
-                            '''
-                        }
+                        // rag_ingestion is NOT a workspace member — it has its own lockfile.
+                        // Mount workspace root; cd into rag_ingestion inside the container.
+                        sh """
+                            docker run --rm \
+                                -v "\$(pwd)":/workspace \
+                                -w /workspace/rag_ingestion \
+                                ${UV_IMAGE} \
+                                sh -c 'uv sync --frozen --group test && \
+                                       uv run pytest tests/ \
+                                           --cov=src \
+                                           --cov-report=xml:rag-coverage.xml \
+                                           --junitxml=rag-test-results.xml \
+                                           -v --tb=short'
+                        """
                     }
                     post {
                         always {
@@ -246,12 +272,8 @@ pipeline {
                     expression { params.DEPLOY_STAGING == true }
                 }
             }
-            agent {
-                docker {
-                    image "${DOCKER_IMAGE}"
-                    args '--privileged -v /var/run/docker.sock:/var/run/docker.sock'
-                }
-            }
+            // Use the host Docker daemon directly — no DinD needed.
+            agent { label 'any' }
             environment {
                 ACR_SERVER = credentials('acr-login-server')
                 // acr-credentials is a Username+Password credential (shared with frontend):
