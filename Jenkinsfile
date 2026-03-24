@@ -417,7 +417,7 @@ pipeline {
         always {
             // cleanWs requires a node context. With agent none at pipeline level,
             // we must allocate one explicitly.
-            node {
+            node('') {
                 cleanWs()
             }
         }
