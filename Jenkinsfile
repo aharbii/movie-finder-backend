@@ -159,10 +159,17 @@ pipeline {
                     options { skipDefaultCheckout() }
                     steps {
                         unstash 'source'
+                        // ChainConfig requires these fields to instantiate (even in mocked tests).
+                        // Values are dummy — no real API calls are made; all external clients
+                        // are mocked in chain/tests/conftest.py.
                         sh """
                             docker run --rm \
                                 -v "\$(pwd)":/workspace \
                                 -w /workspace \
+                                -e QDRANT_ENDPOINT=https://test.qdrant.io \
+                                -e QDRANT_API_KEY=test-key \
+                                -e OPENAI_API_KEY=sk-test-openai \
+                                -e ANTHROPIC_API_KEY=sk-ant-test \
                                 ${UV_IMAGE} \
                                 sh -c 'uv sync --frozen --group test && \
                                        uv run pytest chain/tests/ \
