@@ -182,10 +182,7 @@ pipeline {
                     post {
                         always {
                             junit allowEmptyResults: true, testResults: 'chain-test-results.xml'
-                            recordCoverage(
-                                tools: [[parser: 'COBERTURA', pattern: 'chain-coverage.xml']],
-                                id: 'chain-coverage', name: 'Chain Coverage'
-                            )
+                            archiveArtifacts artifacts: 'chain-coverage.xml', allowEmptyArchive: true
                         }
                     }
                 }
@@ -211,10 +208,7 @@ pipeline {
                     post {
                         always {
                             junit allowEmptyResults: true, testResults: 'imdbapi-test-results.xml'
-                            recordCoverage(
-                                tools: [[parser: 'COBERTURA', pattern: 'imdbapi-coverage.xml']],
-                                id: 'imdbapi-coverage', name: 'Imdbapi Coverage'
-                            )
+                            archiveArtifacts artifacts: 'imdbapi-coverage.xml', allowEmptyArchive: true
                         }
                     }
                 }
@@ -226,15 +220,19 @@ pipeline {
                     options { skipDefaultCheckout() }
                     environment {
                         APP_SECRET_KEY = 'ci-test-only-not-a-real-secret' // pragma: allowlist secret
-                        DATABASE_URL   = 'postgresql://postgres:postgres@localhost:5432/movie_finder_test' // pragma: allowlist secret
+                        DATABASE_URL   = 'postgresql://postgres:postgres@ci-app-postgres:5432/movie_finder_test' // pragma: allowlist secret
+                        CI_NET         = "ci-test-net-${env.BUILD_NUMBER}"
                     }
                     steps {
                         unstash 'source'
-                        // Start a throwaway postgres container on the host network.
+                        // Create an isolated bridge network so the UV container can
+                        // reach the postgres container by hostname without conflicting
+                        // with any pre-existing service on the host's port 5432.
+                        sh 'docker network create "$CI_NET"'
                         sh '''
                             docker rm -f ci-app-postgres 2>/dev/null || true
                             docker run -d --name ci-app-postgres \
-                                --network host \
+                                --network "$CI_NET" \
                                 -e POSTGRES_PASSWORD=postgres \
                                 -e POSTGRES_DB=movie_finder_test \
                                 postgres:16-alpine
@@ -244,11 +242,9 @@ pipeline {
                                     && break || sleep 1
                             done
                         '''
-                        // Run tests inside the UV image; --network host lets it reach
-                        // the postgres container at localhost:5432.
                         sh """
                             docker run --rm \
-                                --network host \
+                                --network "\$CI_NET" \
                                 -e APP_SECRET_KEY="\$APP_SECRET_KEY" \
                                 -e DATABASE_URL="\$DATABASE_URL" \
                                 -v "\$(pwd)":/workspace \
@@ -265,11 +261,9 @@ pipeline {
                     post {
                         always {
                             junit allowEmptyResults: true, testResults: 'app-test-results.xml'
-                            recordCoverage(
-                                tools: [[parser: 'COBERTURA', pattern: 'app-coverage.xml']],
-                                id: 'app-coverage', name: 'App Coverage'
-                            )
-                            sh 'docker stop ci-app-postgres && docker rm ci-app-postgres || true'
+                            archiveArtifacts artifacts: 'app-coverage.xml', allowEmptyArchive: true
+                            sh 'docker rm -f ci-app-postgres || true'
+                            sh 'docker network rm "$CI_NET" || true'
                         }
                     }
                 }
