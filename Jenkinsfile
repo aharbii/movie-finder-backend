@@ -69,7 +69,11 @@ pipeline {
         stage('Checkout Submodules') {
             agent any
             steps {
-                sh 'git submodule update --init --recursive'
+                // Forward the SSH key so git can clone submodules over SSH.
+                // Credential ID must match the one configured in Jenkins → Credentials.
+                sshagent(['github-ssh-key']) {
+                    sh 'git submodule update --init --recursive'
+                }
             }
         }
 
@@ -411,7 +415,11 @@ pipeline {
 
     post {
         always {
-            cleanWs()
+            // cleanWs requires a node context. With agent none at pipeline level,
+            // we must allocate one explicitly.
+            node {
+                cleanWs()
+            }
         }
         failure {
             echo "Pipeline failed on ${env.BRANCH_NAME ?: env.GIT_TAG_NAME ?: 'unknown ref'}."
