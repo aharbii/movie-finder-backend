@@ -37,7 +37,7 @@
 //   the Docker Pipeline plugin is NOT required.
 //
 // Jenkins agent labels required:
-//   any     — generic agent with Docker available (for all build/test stages)
+//   (none)  — build/test stages use "agent any" (any available executor)
 //   deploy  — agent with Azure CLI (az) installed (for deploy stages)
 // =============================================================================
 
@@ -67,7 +67,7 @@ pipeline {
 
         // ------------------------------------------------------------------ //
         stage('Checkout Submodules') {
-            agent { label 'any' }
+            agent any
             steps {
                 sh 'git submodule update --init --recursive'
             }
@@ -78,7 +78,7 @@ pipeline {
             parallel {
 
                 stage('Lint — chain') {
-                    agent { label 'any' }
+                    agent any
                     steps {
                         sh """
                             docker run --rm \
@@ -94,7 +94,7 @@ pipeline {
                 }
 
                 stage('Lint — imdbapi') {
-                    agent { label 'any' }
+                    agent any
                     steps {
                         sh """
                             docker run --rm \
@@ -110,7 +110,7 @@ pipeline {
                 }
 
                 stage('Lint — app') {
-                    agent { label 'any' }
+                    agent any
                     steps {
                         sh """
                             docker run --rm \
@@ -133,7 +133,7 @@ pipeline {
             parallel {
 
                 stage('Test — chain') {
-                    agent { label 'any' }
+                    agent any
                     steps {
                         sh """
                             docker run --rm \
@@ -158,7 +158,7 @@ pipeline {
                 }
 
                 stage('Test — imdbapi') {
-                    agent { label 'any' }
+                    agent any
                     steps {
                         sh """
                             docker run --rm \
@@ -185,7 +185,7 @@ pipeline {
                 stage('Test — app') {
                     // Run on the Jenkins host (not inside a UV container) so we can
                     // manage Docker containers directly for the PostgreSQL sidecar.
-                    agent { label 'any' }
+                    agent any
                     environment {
                         APP_SECRET_KEY = 'ci-test-only-not-a-real-secret' // pragma: allowlist secret
                         DATABASE_URL   = 'postgresql://postgres:postgres@localhost:5432/movie_finder_test' // pragma: allowlist secret
@@ -233,7 +233,7 @@ pipeline {
                 }
 
                 stage('Test — rag_ingestion') {
-                    agent { label 'any' }
+                    agent any
                     steps {
                         // rag_ingestion is NOT a workspace member — it has its own lockfile.
                         // Mount workspace root; cd into rag_ingestion inside the container.
@@ -273,7 +273,7 @@ pipeline {
                 }
             }
             // Use the host Docker daemon directly — no DinD needed.
-            agent { label 'any' }
+            agent any
             environment {
                 ACR_SERVER = credentials('acr-login-server')
                 // acr-credentials is a Username+Password credential (shared with frontend):
