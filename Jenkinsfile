@@ -82,6 +82,10 @@ pipeline {
                         ssh-agent -k
                     '''
                 }
+                // Stash the complete workspace (main repo + submodules) so that
+                // parallel stages running in separate @2/@3 workspaces can
+                // unstash and get the full source tree.
+                stash name: 'source', excludes: '.git,**/.git,**/.venv'
             }
         }
 
@@ -91,7 +95,9 @@ pipeline {
 
                 stage('Lint — chain') {
                     agent any
+                    options { skipDefaultCheckout() }
                     steps {
+                        unstash 'source'
                         sh """
                             docker run --rm \
                                 -v "\$(pwd)":/workspace \
@@ -107,7 +113,9 @@ pipeline {
 
                 stage('Lint — imdbapi') {
                     agent any
+                    options { skipDefaultCheckout() }
                     steps {
+                        unstash 'source'
                         sh """
                             docker run --rm \
                                 -v "\$(pwd)":/workspace \
@@ -123,7 +131,9 @@ pipeline {
 
                 stage('Lint — app') {
                     agent any
+                    options { skipDefaultCheckout() }
                     steps {
+                        unstash 'source'
                         sh """
                             docker run --rm \
                                 -v "\$(pwd)":/workspace \
@@ -146,7 +156,9 @@ pipeline {
 
                 stage('Test — chain') {
                     agent any
+                    options { skipDefaultCheckout() }
                     steps {
+                        unstash 'source'
                         sh """
                             docker run --rm \
                                 -v "\$(pwd)":/workspace \
@@ -171,7 +183,9 @@ pipeline {
 
                 stage('Test — imdbapi') {
                     agent any
+                    options { skipDefaultCheckout() }
                     steps {
+                        unstash 'source'
                         sh """
                             docker run --rm \
                                 -v "\$(pwd)":/workspace \
@@ -198,11 +212,13 @@ pipeline {
                     // Run on the Jenkins host (not inside a UV container) so we can
                     // manage Docker containers directly for the PostgreSQL sidecar.
                     agent any
+                    options { skipDefaultCheckout() }
                     environment {
                         APP_SECRET_KEY = 'ci-test-only-not-a-real-secret' // pragma: allowlist secret
                         DATABASE_URL   = 'postgresql://postgres:postgres@localhost:5432/movie_finder_test' // pragma: allowlist secret
                     }
                     steps {
+                        unstash 'source'
                         // Start a throwaway postgres container on the host network.
                         sh '''
                             docker run -d --name ci-app-postgres \
@@ -246,7 +262,9 @@ pipeline {
 
                 stage('Test — rag_ingestion') {
                     agent any
+                    options { skipDefaultCheckout() }
                     steps {
+                        unstash 'source'
                         // rag_ingestion is NOT a workspace member — it has its own lockfile.
                         // Mount workspace root; cd into rag_ingestion inside the container.
                         sh """
