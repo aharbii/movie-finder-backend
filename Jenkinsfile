@@ -70,9 +70,17 @@ pipeline {
             agent any
             steps {
                 // Forward the SSH key so git can clone submodules over SSH.
-                // Credential ID must match the one configured in Jenkins → Credentials.
-                sshagent(['github-ssh-key']) {
-                    sh 'git submodule update --init --recursive'
+                // Uses withCredentials + ssh-agent (no SSH Agent plugin required).
+                withCredentials([sshUserPrivateKey(
+                    credentialsId: 'github-ssh-key',
+                    keyFileVariable: 'SSH_KEY'
+                )]) {
+                    sh '''
+                        eval $(ssh-agent -s)
+                        ssh-add "$SSH_KEY"
+                        git submodule update --init --recursive
+                        ssh-agent -k
+                    '''
                 }
             }
         }
