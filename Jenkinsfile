@@ -4,7 +4,7 @@
 // Stages:
 //   1. Checkout Submodules
 //   2. Lint (parallel)       — chain, imdbapi, app
-//   3. Test (parallel)       — chain, imdbapi, app, rag_ingestion
+//   3. Test (parallel)       — chain, imdbapi, app  (rag_ingestion excluded: needs real API keys)
 //   4. Build App Image       — main branch + v* tags + DEPLOY_STAGING=true
 //   5. Deploy to Staging     — main branch (auto) or DEPLOY_STAGING=true
 //   6. Deploy to Production  — v* tags only, after manual approval gate
@@ -182,8 +182,10 @@ pipeline {
                     post {
                         always {
                             junit allowEmptyResults: true, testResults: 'chain-test-results.xml'
-                            cobertura coberturaReportFile: 'chain-coverage.xml',
-                                      onlyStable: false, failNoReports: false
+                            recordCoverage(
+                                tools: [[parser: 'COBERTURA', pattern: 'chain-coverage.xml']],
+                                id: 'chain-coverage', name: 'Chain Coverage'
+                            )
                         }
                     }
                 }
@@ -209,8 +211,10 @@ pipeline {
                     post {
                         always {
                             junit allowEmptyResults: true, testResults: 'imdbapi-test-results.xml'
-                            cobertura coberturaReportFile: 'imdbapi-coverage.xml',
-                                      onlyStable: false, failNoReports: false
+                            recordCoverage(
+                                tools: [[parser: 'COBERTURA', pattern: 'imdbapi-coverage.xml']],
+                                id: 'imdbapi-coverage', name: 'Imdbapi Coverage'
+                            )
                         }
                     }
                 }
@@ -228,6 +232,7 @@ pipeline {
                         unstash 'source'
                         // Start a throwaway postgres container on the host network.
                         sh '''
+                            docker rm -f ci-app-postgres 2>/dev/null || true
                             docker run -d --name ci-app-postgres \
                                 --network host \
                                 -e POSTGRES_PASSWORD=postgres \
@@ -260,42 +265,18 @@ pipeline {
                     post {
                         always {
                             junit allowEmptyResults: true, testResults: 'app-test-results.xml'
-                            cobertura coberturaReportFile: 'app-coverage.xml',
-                                      onlyStable: false, failNoReports: false
+                            recordCoverage(
+                                tools: [[parser: 'COBERTURA', pattern: 'app-coverage.xml']],
+                                id: 'app-coverage', name: 'App Coverage'
+                            )
                             sh 'docker stop ci-app-postgres && docker rm ci-app-postgres || true'
                         }
                     }
                 }
 
-                stage('Test — rag_ingestion') {
-                    agent any
-                    options { skipDefaultCheckout() }
-                    steps {
-                        unstash 'source'
-                        // rag_ingestion is NOT a workspace member — it has its own lockfile.
-                        // Mount workspace root; cd into rag_ingestion inside the container.
-                        sh """
-                            docker run --rm \
-                                -v "\$(pwd)":/workspace \
-                                -w /workspace/rag_ingestion \
-                                ${UV_IMAGE} \
-                                sh -c 'uv sync --frozen --group test && \
-                                       uv run pytest tests/ \
-                                           --cov=src \
-                                           --cov-report=xml:rag-coverage.xml \
-                                           --junitxml=rag-test-results.xml \
-                                           -v --tb=short'
-                        """
-                    }
-                    post {
-                        always {
-                            junit allowEmptyResults: true,
-                                  testResults: 'rag_ingestion/rag-test-results.xml'
-                            cobertura coberturaReportFile: 'rag_ingestion/rag-coverage.xml',
-                                      onlyStable: false, failNoReports: false
-                        }
-                    }
-                }
+                // Test — rag_ingestion is intentionally excluded from CI.
+                // Its tests make real OpenAI embedding API calls (no mock available)
+                // and would incur cost on every pipeline run.
 
             }
         }
