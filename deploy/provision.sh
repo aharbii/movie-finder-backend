@@ -277,10 +277,13 @@ az identity create \
     --location       "$LOCATION" \
     --output         none
 
+# Force canonical camelCase on the resource ID. The Azure CLI often returns
+# "resourcegroups" (all-lowercase) but the Container Apps ARM validator does
+# a case-sensitive match and requires "resourceGroups".
 IDENTITY_ID="$(az identity show \
     --name           "$IDENTITY_NAME" \
     --resource-group "$RG" \
-    --query          id -o tsv)"
+    --query          id -o tsv | sed 's/resourcegroups/resourceGroups/gi')"
 IDENTITY_CLIENT_ID="$(az identity show \
     --name           "$IDENTITY_NAME" \
     --resource-group "$RG" \
@@ -308,8 +311,22 @@ az role assignment create \
     --output                  none 2>/dev/null || true
 
 echo "    ✓ $IDENTITY_NAME (AcrPull + Key Vault Secrets User)"
-echo "    Waiting 60 s for identity role assignments to propagate..."
-sleep 60
+
+# Poll until the AcrPull assignment is visible in the ARM API before
+# creating the Container App. A fixed sleep is not reliable across regions.
+echo "    Waiting for AcrPull role assignment to propagate..."
+for _i in $(seq 1 36); do
+    _found="$(az role assignment list \
+        --assignee   "$IDENTITY_PRINCIPAL_ID" \
+        --role       "AcrPull" \
+        --scope      "$ACR_ID" \
+        --query      '[0].id' -o tsv 2>/dev/null || true)"
+    if [[ -n "$_found" ]]; then
+        echo "    ✓ AcrPull confirmed (after $((_i * 5)) s)"
+        break
+    fi
+    sleep 5
+done
 
 # --------------------------------------------------------------------------- #
 # 9. Container Apps Environment
@@ -338,6 +355,10 @@ ACA_ENV_ID="$(az containerapp env show \
 
 ACA_YAML="$(mktemp /tmp/containerapp-XXXXXX.yaml)"
 
+# Minimal skeleton — public placeholder image, no identity references.
+# The ARM validator rejects identity references until propagation is complete.
+# Jenkins configures secrets, registry, managed identity, and the real image
+# on the first pipeline run via az containerapp update --yaml.
 cat > "$ACA_YAML" << YAML
 properties:
   managedEnvironmentId: ${ACA_ENV_ID}
@@ -348,80 +369,23 @@ properties:
       targetPort: 8000
       transport: http
       allowInsecure: false
-    registries:
-    - server: ${ACR_SERVER}
-      identity: ${IDENTITY_ID}
-    secrets:
-    - name: app-secret-key
-      keyVaultUrl: ${KV_URI}/secrets/APP-SECRET-KEY
-      identity: ${IDENTITY_ID}
-    - name: database-url
-      keyVaultUrl: ${KV_URI}/secrets/DATABASE-URL
-      identity: ${IDENTITY_ID}
-    - name: anthropic-api-key
-      keyVaultUrl: ${KV_URI}/secrets/ANTHROPIC-API-KEY
-      identity: ${IDENTITY_ID}
-    - name: openai-api-key
-      keyVaultUrl: ${KV_URI}/secrets/OPENAI-API-KEY
-      identity: ${IDENTITY_ID}
-    - name: qdrant-endpoint
-      keyVaultUrl: ${KV_URI}/secrets/QDRANT-ENDPOINT
-      identity: ${IDENTITY_ID}
-    - name: qdrant-api-key
-      keyVaultUrl: ${KV_URI}/secrets/QDRANT-API-KEY
-      identity: ${IDENTITY_ID}
   template:
     containers:
     - name: ${SERVICE_NAME}
-      # Placeholder image — Jenkins will update this on the first pipeline run
       image: mcr.microsoft.com/azuredocs/containerapps-helloworld:latest
       resources:
         cpu: 0.5
         memory: 1.0Gi
       env:
-      # Non-sensitive configuration
       - name: APP_ENV
         value: ${ENV}
       - name: APP_PORT
         value: "8000"
-      - name: QDRANT_COLLECTION
-        value: movies
-      - name: EMBEDDING_MODEL
-        value: text-embedding-3-large
-      - name: EMBEDDING_DIMENSION
-        value: "3072"
-      - name: RAG_TOP_K
-        value: "8"
-      - name: MAX_REFINEMENTS
-        value: "3"
-      - name: IMDB_SEARCH_LIMIT
-        value: "3"
-      - name: CONFIDENCE_THRESHOLD
-        value: "0.3"
       - name: LOG_LEVEL
         value: INFO
-      - name: LANGSMITH_TRACING
-        value: "false"
-      # Sensitive — injected from Key Vault via the managed identity at runtime
-      - name: APP_SECRET_KEY
-        secretRef: app-secret-key
-      - name: DATABASE_URL
-        secretRef: database-url
-      - name: ANTHROPIC_API_KEY
-        secretRef: anthropic-api-key
-      - name: OPENAI_API_KEY
-        secretRef: openai-api-key
-      - name: QDRANT_ENDPOINT
-        secretRef: qdrant-endpoint
-      - name: QDRANT_API_KEY
-        secretRef: qdrant-api-key
     scale:
       minReplicas: ${MIN_REPLICAS}
       maxReplicas: ${MAX_REPLICAS}
-  identity:
-    type: UserAssigned
-    userAssignedIdentities:
-      ${IDENTITY_ID}: {}
 YAML
 
 if az containerapp show --name "$ACA_APP_NAME" --resource-group "$RG" --output none 2>/dev/null; then
