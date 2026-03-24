@@ -224,12 +224,18 @@ if ! az postgres flexible-server show --name "$PG_SERVER" --resource-group "$RG"
         --tier            Burstable \
         --version         16 \
         --storage-size    32 \
-        --database-name   "$PG_DB" \
         --public-access   0.0.0.0 \
         --output          none
     # --public-access 0.0.0.0 creates the "Allow access to Azure services" firewall
     # rule, which permits Container Apps to connect to the server.
 fi
+
+# Create the application database (idempotent — skipped if it already exists)
+az postgres flexible-server db create \
+    --server-name    "$PG_SERVER" \
+    --resource-group "$RG" \
+    --database-name  "$PG_DB" \
+    --output         none 2>/dev/null || true
 
 PG_FQDN="${PG_SERVER}.postgres.database.azure.com"
 DATABASE_URL="postgresql://${PG_ADMIN_USER}:${PG_ADMIN_PASSWORD}@${PG_FQDN}/${PG_DB}?sslmode=require"
@@ -286,20 +292,24 @@ IDENTITY_PRINCIPAL_ID="$(az identity show \
 
 # Pull images from ACR
 az role assignment create \
-    --assignee-object-id    "$IDENTITY_PRINCIPAL_ID" \
+    --assignee-object-id      "$IDENTITY_PRINCIPAL_ID" \
     --assignee-principal-type ServicePrincipal \
-    --role                  "AcrPull" \
-    --scope                 "$ACR_ID" \
-    --output                none
+    --role                    "AcrPull" \
+    --scope                   "$ACR_ID" \
+    --output                  none 2>/dev/null || true
 
-# Read secrets from Key Vault
-az keyvault set-policy \
-    --name             "$KV_NAME" \
-    --object-id        "$IDENTITY_PRINCIPAL_ID" \
-    --secret-permissions get list \
-    --output           none
+# Read secrets from Key Vault — vault uses RBAC authorization, so grant the
+# "Key Vault Secrets User" role rather than using access policies.
+az role assignment create \
+    --assignee-object-id      "$IDENTITY_PRINCIPAL_ID" \
+    --assignee-principal-type ServicePrincipal \
+    --role                    "Key Vault Secrets User" \
+    --scope                   "$KV_ID" \
+    --output                  none 2>/dev/null || true
 
-echo "    ✓ $IDENTITY_NAME (AcrPull + Key Vault get/list)"
+echo "    ✓ $IDENTITY_NAME (AcrPull + Key Vault Secrets User)"
+echo "    Waiting 60 s for identity role assignments to propagate..."
+sleep 60
 
 # --------------------------------------------------------------------------- #
 # 9. Container Apps Environment
@@ -414,11 +424,20 @@ properties:
       ${IDENTITY_ID}: {}
 YAML
 
-az containerapp create \
-    --name           "$ACA_APP_NAME" \
-    --resource-group "$RG" \
-    --yaml           "$ACA_YAML" \
-    --output         none
+if az containerapp show --name "$ACA_APP_NAME" --resource-group "$RG" --output none 2>/dev/null; then
+    # App already exists (e.g. from a failed previous run) — update it instead
+    az containerapp update \
+        --name           "$ACA_APP_NAME" \
+        --resource-group "$RG" \
+        --yaml           "$ACA_YAML" \
+        --output         none
+else
+    az containerapp create \
+        --name           "$ACA_APP_NAME" \
+        --resource-group "$RG" \
+        --yaml           "$ACA_YAML" \
+        --output         none
+fi
 
 rm -f "$ACA_YAML"
 
