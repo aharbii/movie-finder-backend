@@ -341,7 +341,7 @@ pipeline {
                 AZURE_SP        = credentials('azure-sp')
                 AZURE_TENANT_ID = credentials('azure-tenant-id')
                 AZURE_SUB_ID    = credentials('azure-sub-id')
-                ACA_RG          = credentials('aca-rg')
+                ACA_RG          = credentials('aca-staging-rg')
                 ACA_NAME        = credentials('aca-staging-name')
                 ACR_SERVER      = credentials('acr-login-server')
             }
@@ -381,7 +381,7 @@ pipeline {
                 AZURE_SP        = credentials('azure-sp')
                 AZURE_TENANT_ID = credentials('azure-tenant-id')
                 AZURE_SUB_ID    = credentials('azure-sub-id')
-                ACA_RG          = credentials('aca-rg')
+                ACA_RG          = credentials('aca-prod-rg')
                 ACA_NAME        = credentials('aca-prod-name')
                 ACR_SERVER      = credentials('acr-login-server')
             }

@@ -65,7 +65,8 @@ SUBSCRIPTION_ID="$(az account show --query id -o tsv)"
 SUFFIX="${ENV}"                            # e.g. "staging" or "production"
 RG="rg-movie-finder-${SUFFIX}"
 ACR_NAME="acrmoviefinder"                  # globally unique, no hyphens, max 50 chars
-KV_NAME="kv-movie-finder-${SUFFIX}"       # globally unique, max 24 chars
+# KV names max 24 chars. "kv-movie-finder-staging"=23 ✓, "kv-movie-finder-production"=26 ✗
+[[ "$ENV" == "production" ]] && KV_NAME="kv-movie-finder-prod" || KV_NAME="kv-movie-finder-${SUFFIX}"
 PG_SERVER="pg-movie-finder-${SUFFIX}"     # globally unique, max 63 chars
 PG_DB="movie_finder"
 PG_ADMIN_USER="pgadmin"
@@ -157,14 +158,19 @@ echo "    ✓ $RG"
 # --------------------------------------------------------------------------- #
 
 echo ">>> [3/11] Creating Azure Container Registry..."
-az acr create \
-    --name           "$ACR_NAME" \
-    --resource-group "$RG" \
-    --sku            Basic \
-    --admin-enabled  false \
-    --output         none
 ACR_SERVER="${ACR_NAME}.azurecr.io"
-ACR_ID="$(az acr show --name "$ACR_NAME" --resource-group "$RG" --query id -o tsv)"
+# ACR name has no env suffix — it is shared by staging and production.
+# Look up the existing registry across the whole subscription first.
+ACR_ID="$(az acr show --name "$ACR_NAME" --query id -o tsv 2>/dev/null || true)"
+if [[ -z "$ACR_ID" ]]; then
+    az acr create \
+        --name           "$ACR_NAME" \
+        --resource-group "$RG" \
+        --sku            Basic \
+        --admin-enabled  false \
+        --output         none
+    ACR_ID="$(az acr show --name "$ACR_NAME" --query id -o tsv)"
+fi
 echo "    ✓ $ACR_SERVER"
 
 # --------------------------------------------------------------------------- #
@@ -333,25 +339,36 @@ done
 # --------------------------------------------------------------------------- #
 
 echo ">>> [8/11] Creating Container Apps Environment..."
-az containerapp env create \
-    --name                              "$ACA_ENV_NAME" \
-    --resource-group                    "$RG" \
-    --location                          "$LOCATION" \
-    --logs-workspace-id                 "$LAW_ID" \
-    --logs-workspace-key                "$LAW_KEY" \
-    --output                            none
-echo "    ✓ $ACA_ENV_NAME"
+# Azure limits 1 Container Apps Environment per region per subscription.
+# If one already exists anywhere in the subscription (e.g. from staging),
+# reuse it rather than trying to create a second one.
+ACA_ENV_ID="$(az containerapp env list \
+    --query "[0].id" -o tsv 2>/dev/null || true)"
+
+if [[ -n "$ACA_ENV_ID" ]]; then
+    echo "    Reusing existing Container Apps Environment (subscription limit: 1 per region)"
+    echo "    ✓ $(az containerapp env show --ids "$ACA_ENV_ID" --query name -o tsv)"
+else
+    az containerapp env create \
+        --name                              "$ACA_ENV_NAME" \
+        --resource-group                    "$RG" \
+        --location                          "$LOCATION" \
+        --logs-workspace-id                 "$LAW_ID" \
+        --logs-workspace-key                "$LAW_KEY" \
+        --output                            none
+    ACA_ENV_ID="$(az containerapp env show \
+        --name           "$ACA_ENV_NAME" \
+        --resource-group "$RG" \
+        --query          id -o tsv)"
+    echo "    ✓ $ACA_ENV_NAME"
+fi
 
 # --------------------------------------------------------------------------- #
 # 10. Container App (initial provision with placeholder image)
 # --------------------------------------------------------------------------- #
 
 echo ">>> [9/11] Creating Container App..."
-
-ACA_ENV_ID="$(az containerapp env show \
-    --name           "$ACA_ENV_NAME" \
-    --resource-group "$RG" \
-    --query          id -o tsv)"
+# ACA_ENV_ID is already set from step [8/11]
 
 ACA_YAML="$(mktemp /tmp/containerapp-XXXXXX.yaml)"
 
@@ -404,6 +421,24 @@ else
 fi
 
 rm -f "$ACA_YAML"
+
+# Attach the managed identity to the Container App and configure ACR registry
+# authentication. This must happen after the app exists (ARM validates identity
+# references at create time, which fails before propagation is complete).
+echo "    Assigning managed identity to Container App..."
+az containerapp identity assign \
+    --name            "$ACA_APP_NAME" \
+    --resource-group  "$RG" \
+    --user-assigned   "$IDENTITY_ID" \
+    --output          none
+
+echo "    Configuring ACR registry with managed identity..."
+az containerapp registry set \
+    --name            "$ACA_APP_NAME" \
+    --resource-group  "$RG" \
+    --server          "$ACR_SERVER" \
+    --identity        "$IDENTITY_ID" \
+    --output          none
 
 APP_FQDN="$(az containerapp show \
     --name           "$ACA_APP_NAME" \
@@ -484,11 +519,19 @@ fi
 
 echo ">>> [11/11] Additional Jenkins credentials to add..."
 echo ""
-echo "    ID: aca-rg                  Type: Secret Text"
-echo "        Value: $RG"
-echo ""
-echo "    ID: aca-${SUFFIX}-name      Type: Secret Text"
-echo "        Value: $ACA_APP_NAME"
+if [[ "$ENV" == "production" ]]; then
+    echo "    ID: aca-prod-rg             Type: Secret Text"
+    echo "        Value: $RG"
+    echo ""
+    echo "    ID: aca-prod-name           Type: Secret Text"
+    echo "        Value: $ACA_APP_NAME"
+else
+    echo "    ID: aca-staging-rg          Type: Secret Text"
+    echo "        Value: $RG"
+    echo ""
+    echo "    ID: aca-staging-name        Type: Secret Text"
+    echo "        Value: $ACA_APP_NAME"
+fi
 echo ""
 
 # --------------------------------------------------------------------------- #
