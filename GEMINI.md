@@ -1,0 +1,63 @@
+# Gemini CLI — backend submodule
+
+Foundational mandate for the `movie-finder-backend` (`backend/`).
+
+---
+
+## What this submodule does
+FastAPI backend — HTTP/SSE API layer and `uv` workspace root.
+- **Auth:** JWT (python-jose, bcrypt)
+- **Sessions:** PostgreSQL 16 via asyncpg
+- **Streaming:** SSE proxies LangGraph pipeline events
+- **uv workspace:** `app/`, `chain/`, `imdbapi/` are members
+
+---
+
+## Technology stack
+- Python 3.13, FastAPI 0.115+
+- `uv` workspace root
+- `ruff` (line-length 100), `mypy --strict`
+- `pytest --asyncio-mode=auto`
+
+---
+
+## Design patterns
+- **Dependency injection:** Use FastAPI `Depends()` for shared resources.
+- **Repository:** Data access lives in repository classes.
+- **Configuration:** Pydantic `BaseSettings` for env vars.
+- **Middleware:** Cross-cutting concerns in middleware.
+
+---
+
+## Coding standards
+- `mypy --strict` must pass.
+- Async all the way — no blocking I/O.
+- Docstrings required (Google style).
+- Line length: 100 (`ruff`).
+
+---
+
+## Common tasks
+- `make lint`
+- `make test`
+- `make build` (Docker)
+- `make run` (Docker Compose)
+
+---
+
+## VSCode setup
+
+`backend/.vscode/` covers **all backend sub-packages** — opening `backend/` as a workspace
+gives full lint, test, debug, and format capabilities for app/, chain/, imdbapi/, and rag_ingestion/.
+
+- `settings.json` — interpreter `backend/.venv`, Ruff format-on-save, mypy strict
+- `extensions.json` — Python, debugpy, Ruff, mypy, TOML, Docker, GitLens
+- `launch.json` — FastAPI dev server · chain chat.py · rag pipeline · pytest all/per-package
+- `tasks.json` — per-package lint/test + `lint: all` + `test: all` aggregates + pre-commit per package
+
+**Interpreters:** `uv sync --all-packages` from `backend/` (workspace members);
+`uv sync` from `backend/rag_ingestion/` separately (standalone project).
+
+**Modifying VSCode configs:** keep the hierarchy — child task must be re-exposed in parent
+with an explicit `options.cwd`. Update `CLAUDE.md`, `GEMINI.md`, `AGENTS.md`, and
+the repo's `.github/copilot-instructions.md` after.

@@ -1,0 +1,189 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+
+    // ══════════════════════════════════════════════════════════════════════
+    // app/ — FastAPI application (uv workspace member)
+    // ══════════════════════════════════════════════════════════════════════
+    {
+      "label": "app: lint",
+      "type": "shell",
+      "command": "uv run ruff check app/ && uv run mypy app/src/",
+      "group": "build",
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "app: test",
+      "type": "shell",
+      "command": "uv run pytest app/tests/ --asyncio-mode=auto -v",
+      "group": "test",
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "app: test with coverage",
+      "type": "shell",
+      "command": "uv run pytest app/tests/ --asyncio-mode=auto -v --cov=app --cov-report=html",
+      "group": "test",
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+
+    // ══════════════════════════════════════════════════════════════════════
+    // chain/ — LangGraph AI pipeline (uv workspace member)
+    // ══════════════════════════════════════════════════════════════════════
+    {
+      "label": "chain: lint",
+      "type": "shell",
+      "command": "uv run ruff check chain/ && uv run mypy chain/src/",
+      "group": "build",
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "chain: test",
+      "type": "shell",
+      "command": "uv run pytest chain/tests/ --asyncio-mode=auto -v",
+      "group": "test",
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "chain: test with coverage",
+      "type": "shell",
+      "command": "uv run pytest chain/tests/ --asyncio-mode=auto -v --cov=chain --cov-report=html",
+      "group": "test",
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+
+    // ══════════════════════════════════════════════════════════════════════
+    // imdbapi/ — Async IMDb REST client (uv workspace member)
+    // ══════════════════════════════════════════════════════════════════════
+    {
+      "label": "imdbapi: lint",
+      "type": "shell",
+      "command": "uv run ruff check imdbapi/ && uv run mypy imdbapi/src/",
+      "group": "build",
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "imdbapi: test",
+      "type": "shell",
+      "command": "uv run pytest imdbapi/tests/ --asyncio-mode=auto -v",
+      "group": "test",
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "imdbapi: test with coverage",
+      "type": "shell",
+      "command": "uv run pytest imdbapi/tests/ --asyncio-mode=auto -v --cov=imdbapi --cov-report=html",
+      "group": "test",
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+
+    // ══════════════════════════════════════════════════════════════════════
+    // rag_ingestion/ — Standalone uv project (NOT a workspace member)
+    // Uses its own .venv — commands cd into the directory first
+    // ══════════════════════════════════════════════════════════════════════
+    {
+      "label": "rag: lint",
+      "type": "shell",
+      "command": "uv run ruff check . && uv run mypy .",
+      "options": { "cwd": "${workspaceFolder}/rag_ingestion" },
+      "group": "build",
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "rag: test",
+      "type": "shell",
+      "command": "uv run pytest tests/ -v",
+      "options": { "cwd": "${workspaceFolder}/rag_ingestion" },
+      "group": "test",
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "rag: test with coverage",
+      "type": "shell",
+      "command": "uv run pytest tests/ -v --cov --cov-report=html",
+      "options": { "cwd": "${workspaceFolder}/rag_ingestion" },
+      "group": "test",
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+
+    // ══════════════════════════════════════════════════════════════════════
+    // Aggregates — all packages
+    // ══════════════════════════════════════════════════════════════════════
+    {
+      "label": "lint: all",
+      "dependsOn": ["app: lint", "chain: lint", "imdbapi: lint", "rag: lint"],
+      "dependsOrder": "parallel",
+      "group": { "kind": "build", "isDefault": true },
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "test: all",
+      "dependsOn": ["app: test", "chain: test", "imdbapi: test", "rag: test"],
+      "dependsOrder": "parallel",
+      "group": { "kind": "test", "isDefault": true },
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "format: all",
+      "type": "shell",
+      "command": "uv run ruff format app/ chain/ imdbapi/ && (cd rag_ingestion && uv run ruff format .)",
+      "group": "build",
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+
+    // ══════════════════════════════════════════════════════════════════════
+    // Pre-commit — run per package (each has its own config)
+    // ══════════════════════════════════════════════════════════════════════
+    {
+      "label": "pre-commit: backend (app)",
+      "type": "shell",
+      "command": "uv run pre-commit run --all-files",
+      "group": "build",
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "pre-commit: chain",
+      "type": "shell",
+      "command": "uv run pre-commit run --all-files",
+      "options": { "cwd": "${workspaceFolder}/chain" },
+      "group": "build",
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "pre-commit: imdbapi",
+      "type": "shell",
+      "command": "uv run pre-commit run --all-files",
+      "options": { "cwd": "${workspaceFolder}/imdbapi" },
+      "group": "build",
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "pre-commit: rag",
+      "type": "shell",
+      "command": "uv run pre-commit run --all-files",
+      "options": { "cwd": "${workspaceFolder}/rag_ingestion" },
+      "group": "build",
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+
+    // ══════════════════════════════════════════════════════════════════════
+    // Docker
+    // ══════════════════════════════════════════════════════════════════════
+    {
+      "label": "docker: build backend",
+      "type": "shell",
+      "command": "docker build -t movie-finder-backend .",
+      "group": "build",
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "docker: up (full stack)",
+      "type": "shell",
+      "command": "docker compose up --build",
+      "options": { "cwd": "${workspaceFolder}/.." },
+      "group": "build",
+      "isBackground": true,
+      "presentation": { "reveal": "always", "panel": "dedicated" }
+    }
+  ]
+}

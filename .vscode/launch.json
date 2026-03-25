@@ -1,0 +1,77 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+
+    // ── FastAPI application (app/) ──────────────────────────────────────────
+    {
+      "name": "app: FastAPI dev server",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": ["app.main:app", "--reload", "--host", "0.0.0.0", "--port", "8000"],
+      "jinja": true,
+      "envFile": "${workspaceFolder}/.env",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "cwd": "${workspaceFolder}"
+    },
+
+    // ── chain/ — LangGraph pipeline ────────────────────────────────────────
+    {
+      "name": "chain: run chat.py (interactive)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/chain/chat.py",
+      "envFile": "${workspaceFolder}/chain/.env",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "cwd": "${workspaceFolder}/chain",
+      "console": "integratedTerminal"
+    },
+
+    // ── rag_ingestion/ — Standalone pipeline ───────────────────────────────
+    // Note: uses its own .venv — run `uv sync` in rag_ingestion/ first
+    {
+      "name": "rag: run ingestion pipeline",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "src.main",
+      "envFile": "${workspaceFolder}/rag_ingestion/.env",
+      "python": "${workspaceFolder}/rag_ingestion/.venv/bin/python",
+      "cwd": "${workspaceFolder}/rag_ingestion",
+      "console": "integratedTerminal"
+    },
+
+    // ── pytest — workspace members (app, chain, imdbapi) ───────────────────
+    {
+      "name": "pytest: all workspace tests",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": ["app/tests/", "chain/tests/", "imdbapi/tests/", "--asyncio-mode=auto", "-v"],
+      "envFile": "${workspaceFolder}/.env",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "pytest: current file",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": ["${file}", "--asyncio-mode=auto", "-v"],
+      "envFile": "${workspaceFolder}/.env",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "cwd": "${workspaceFolder}"
+    },
+
+    // ── pytest — rag_ingestion (standalone venv) ───────────────────────────
+    {
+      "name": "pytest: rag_ingestion tests",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": ["tests/", "-v"],
+      "envFile": "${workspaceFolder}/rag_ingestion/.env",
+      "python": "${workspaceFolder}/rag_ingestion/.venv/bin/python",
+      "cwd": "${workspaceFolder}/rag_ingestion"
+    }
+  ]
+}
