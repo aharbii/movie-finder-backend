@@ -27,6 +27,10 @@
 - [ ] `CHANGELOG.md` updated under `[Unreleased]`
 - [ ] README updated if the public interface or setup steps changed
 
+### Review
+- [ ] PR description links the issue and discloses the AI authoring tool + model
+- [ ] Any AI-assisted review comment or approval discloses the review tool + model
+
 ### Submodule changes *(if applicable)*
 - [ ] Submodule pointer updated to a tagged release, not a raw commit
 - [ ] Backend `pyproject.toml` / workspace config updated if dependencies changed

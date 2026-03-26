@@ -92,10 +92,29 @@ make db-start      # Start local PostgreSQL via Docker
 
 ---
 
+## Workflow invariants
+
+- This repo is the gitlink path `backend` inside `aharbii/movie-finder`. Parent
+  workflow/path filters must use `backend`, not `backend/**`.
+- Cross-repo tracker issues originate in `aharbii/movie-finder`. Create the linked child issue in
+  this repo only if this repo will actually change.
+- Inspect `.github/ISSUE_TEMPLATE/*.yml`, `.github/PULL_REQUEST_TEMPLATE.md`, and a recent
+  example before creating or editing issues/PRs. Do not improvise titles or bodies.
+- For child issues in this repo, use `.github/ISSUE_TEMPLATE/linked_task.yml` and keep the
+  description, file references, and acceptance criteria repo-specific.
+- If CI, required checks, or merge policy changes affect this repo, update contributor-facing docs
+  here and in `aharbii/movie-finder` where relevant.
+- If a new standalone issue appears mid-session, branch from `main` unless stacking is explicitly
+  requested.
+- PR descriptions must disclose the AI authoring tool + model. Any AI-assisted review comment or
+  approval must also disclose the review tool + model.
+
+---
+
 ## Cross-cutting — check for every change
 
-1. GitHub issue in `aharbii/movie-finder` (parent) + this repo (linked)
-2. Branch: `feature/`, `fix/`, `chore/` (kebab-case)
+1. GitHub issue in `aharbii/movie-finder` (parent) + linked child issue here only if this repo changes, using the current templates and recent examples
+2. Branch: `feature/`, `fix/`, `chore/` (kebab-case) from `main` unless stacking is explicitly requested
 3. ADR if tech stack, pattern, or external dependency changes
 4. `.env.example` updated in affected repos
 5. `Dockerfile` + `docker-compose.yml` updated
