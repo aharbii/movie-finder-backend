@@ -1,72 +1,115 @@
 # =============================================================================
-# backend — full-stack docker-compose (local development & integration tests)
+# movie-finder-backend — Docker-only local development stack
 #
-# Services:
-#   qdrant  — vector store (always started)
-#   app     — FastAPI application (placeholder until app/ is implemented)
+# Scope of this compose file:
+#   - postgres : local users/sessions/messages database for the backend app
+#   - backend  : FastAPI app with `chain/` and `imdbapi/` mounted from source
 #
-# Usage:
-#   cp .env.example .env && $EDITOR .env   # fill in API keys
-#   docker compose up                       # start full stack
-#   docker compose up qdrant               # start only Qdrant for chain dev
-#   docker compose logs -f app             # follow app logs
+# Deliberately excluded in this iteration:
+#   - Local Qdrant service (Qdrant is cloud-only)
+#   - Standalone child-repo dev services for `chain/`, `imdbapi/`, `rag_ingestion`
 #
-# Submodules must be initialized first:
-#   git submodule update --init --recursive
+# Compatibility notes:
+#   - No fixed `container_name` or named volumes: this stack must coexist with
+#     the parent `movie-finder/` compose project on the same machine.
+#   - `QDRANT_ENDPOINT`, `QDRANT_API_KEY`, and `QDRANT_COLLECTION` are exported
+#     as temporary aliases until `movie-finder-chain#9` lands.
 # =============================================================================
 
-services:
+name: movie-finder-backend-local
 
-  # ---------------------------------------------------------------------------
-  # Qdrant — vector store
-  # Production: use Qdrant Cloud (configure QDRANT_ENDPOINT in .env)
-  # Development: use this local container (endpoint auto-overridden below)
-  # ---------------------------------------------------------------------------
-  qdrant:
-    image: qdrant/qdrant:v1.13.0
-    container_name: movie-finder-qdrant
-    ports:
-      - "6333:6333"
-      - "6334:6334"   # gRPC
-    volumes:
-      - qdrant_data:/qdrant/storage
+services:
+  postgres:
+    image: postgres:16-alpine
     environment:
-      QDRANT__SERVICE__GRPC_PORT: "6334"
+      POSTGRES_DB: ${DB_NAME:-movie_finder}
+      POSTGRES_USER: ${DB_USER:-movie_finder}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-devpassword}
+    ports:
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Create the dedicated test database on first bootstrap so `make test`
+      # never mutates the developer's local `movie_finder` data set.
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:6333/healthz || exit 1"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-movie_finder} -d ${DB_NAME:-movie_finder}"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 15s
+      start_period: 10s
     restart: unless-stopped
 
-  # ---------------------------------------------------------------------------
-  # App — FastAPI application
-  # ---------------------------------------------------------------------------
-  app:
+  backend:
     build:
       context: .
       dockerfile: Dockerfile
-      target: runtime
-    container_name: movie-finder-app
-    ports:
-      - "8000:8000"
-    env_file:
-      - .env
+      target: dev
+    image: movie-finder-backend:dev
+    working_dir: /workspace
+    command:
+      - sh
+      - -c
+      - uvicorn app.main:app --reload --host 0.0.0.0 --port ${APP_PORT:-8000}
     environment:
-      # Override Qdrant to use the local container in dev
-      QDRANT_ENDPOINT: "http://qdrant:6333"
-      QDRANT_API_KEY: ""
+      # App runtime
+      APP_ENV: ${APP_ENV:-development}
+      APP_PORT: ${APP_PORT:-8000}
+      APP_SECRET_KEY: ${APP_SECRET_KEY:-}
+
+      # Compose always points the app at the internal postgres service. Host
+      # port overrides only affect tools running on your machine.
+      DATABASE_URL: postgresql://${DB_USER:-movie_finder}:${DB_PASSWORD:-devpassword}@postgres:5432/${DB_NAME:-movie_finder}
+
+      # Shared chain / vector-store contract
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      CLASSIFIER_MODEL: ${CLASSIFIER_MODEL:-}
+      REASONING_MODEL: ${REASONING_MODEL:-}
+      QDRANT_URL: ${QDRANT_URL:-}
+      QDRANT_API_KEY_RO: ${QDRANT_API_KEY_RO:-}
+      QDRANT_COLLECTION_NAME: ${QDRANT_COLLECTION_NAME:-movies}
+
+      # Temporary compatibility bridge for code that still expects the legacy
+      # Qdrant variable names. Remove once `movie-finder-chain#9` is merged.
+      QDRANT_ENDPOINT: ${QDRANT_URL:-}
+      QDRANT_API_KEY: ${QDRANT_API_KEY_RO:-}
+      QDRANT_COLLECTION: ${QDRANT_COLLECTION_NAME:-movies}
+
+      # Optional observability and tuning knobs
+      LANGSMITH_TRACING: ${LANGSMITH_TRACING:-false}
+      LANGSMITH_ENDPOINT: ${LANGSMITH_ENDPOINT:-https://api.smith.langchain.com}
+      LANGSMITH_API_KEY: ${LANGSMITH_API_KEY:-}
+      LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-movie-finder}
+      RAG_TOP_K: ${RAG_TOP_K:-8}
+      MAX_REFINEMENTS: ${MAX_REFINEMENTS:-3}
+      IMDB_SEARCH_LIMIT: ${IMDB_SEARCH_LIMIT:-3}
+      CONFIDENCE_THRESHOLD: ${CONFIDENCE_THRESHOLD:-0.3}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      # Bind-mount the checkout for hot reload and attached-container editing.
+      - .:/workspace
+      # Tool caches live in named volumes so rebuilds stay fast.
+      - uv_cache:/root/.cache/uv
+      - pre_commit_cache:/root/.cache/pre-commit
+    ports:
+      - "${BACKEND_HOST_PORT:-8000}:${APP_PORT:-8000}"
     depends_on:
-      qdrant:
+      postgres:
         condition: service_healthy
-    develop:
-      watch:
-        - action: sync
-          path: ./app/src
-          target: /app/src
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - python -c "import os, urllib.request; urllib.request.urlopen(f'http://localhost:{os.environ.get(\"APP_PORT\", \"8000\")}/health/live', timeout=3)"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    stdin_open: true
+    tty: true
     restart: unless-stopped
 
 volumes:
-  qdrant_data:
-    name: movie-finder-qdrant-data
+  postgres_data:
+  uv_cache:
+  pre_commit_cache:

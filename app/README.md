@@ -1,119 +1,171 @@
 # app/ — FastAPI Application
 
-FastAPI application that wraps the AI chain and exposes it to end users via a REST API with JWT authentication, streaming chat, and persistent session management.
+FastAPI application that wraps the Movie Finder AI flow and exposes it over REST
+and SSE with JWT authentication, PostgreSQL-backed sessions, and streaming chat.
+
+This package is the **backend-owned application slice** that the root Docker-only
+workflow standardizes in the current iteration.
 
 ---
 
 ## Implemented features
 
-- **User authentication** — JWT register / login / refresh / logout (`/auth/*`)
-- **Streaming chat** — `POST /chat` — multi-turn conversation with the AI chain, streamed via SSE
-- **Session management** — persistent conversation threads per user stored in PostgreSQL
-- **Session history** — `GET /chat/{session_id}/history` — full message history
-- **Session list** — `GET /chat/sessions` — all sessions for the current user with metadata
-- **Session delete** — `DELETE /chat/{session_id}` — remove a session and its messages
-- **Confirmed movie** — `qa` phase persists the confirmed movie metadata to the session
+- **User authentication** — register / login / refresh / logout under `/auth/*`
+- **Streaming chat** — `POST /chat` streams LangGraph events via SSE
+- **Session management** — persistent conversation threads per user in PostgreSQL
+- **Session history** — `GET /chat/{session_id}/history`
+- **Session list** — `GET /chat/sessions`
+- **Session delete** — `DELETE /chat/{session_id}`
+- **Confirmed movie persistence** — the `qa` phase stores confirmed movie metadata
+- **Health probes** — `/health`, `/health/live`, `/health/ready`
 
 ---
 
 ## Structure
 
-```
+```text
 app/
-├── pyproject.toml          ← uv workspace member; depends on movie-finder-chain
+├── pyproject.toml          uv workspace member consumed from the backend root
 └── src/app/
-    ├── main.py             FastAPI() + lifespan + /health
-    ├── config.py           AppConfig (Pydantic Settings — reads from env / .env)
+    ├── main.py             FastAPI app + lifespan + health endpoints
+    ├── config.py           AppConfig (Pydantic settings from env / .env)
     ├── dependencies.py     get_current_user, get_store, get_graph
     ├── routers/
-    │   ├── auth.py         POST /auth/register, /auth/login, /auth/refresh, /auth/logout
-    │   └── chat.py         POST /chat, GET /chat/sessions, GET/DELETE /chat/{session_id}/…
+    │   ├── auth.py         auth endpoints
+    │   └── chat.py         streaming chat + session endpoints
     ├── auth/
-    │   ├── middleware.py   JWT encode / decode (python-jose)
-    │   └── models.py       User, UserInDB, Token Pydantic models
+    │   ├── middleware.py   JWT encode / decode helpers
+    │   └── models.py       auth-related Pydantic models
     └── session/
-        └── store.py        PostgreSQL session store (asyncpg connection pool)
+        └── store.py        PostgreSQL session store via asyncpg
 ```
 
 ---
 
 ## Running locally
 
-The app is part of the `backend/` uv workspace — run from the `backend/` root:
+Run the app from the `backend/` root through the Docker-only contract:
 
 ```bash
-# 1. Start a local PostgreSQL container (first time only)
-make db-start
-# → PostgreSQL at localhost:5432, database: movie_finder, user: movie_finder
+cp .env.example .env
+$EDITOR .env
 
-# 2. Copy and fill in .env (if not done already)
-cp .env.example .env && $EDITOR .env
-# Required: APP_SECRET_KEY, DATABASE_URL, ANTHROPIC_API_KEY, OPENAI_API_KEY,
-#           QDRANT_ENDPOINT, QDRANT_API_KEY, QDRANT_COLLECTION
+make init
+make up
+```
 
-# 3. Start the dev server with hot-reload
-make run-dev
-# → http://localhost:8000
-# → Interactive docs: http://localhost:8000/docs
+Endpoints:
+
+- API: `http://localhost:8000`
+- OpenAPI docs: `http://localhost:8000/docs`
+
+If the parent `movie-finder/` stack is already using the default ports, override
+`BACKEND_HOST_PORT` and `POSTGRES_HOST_PORT` in `.env` before `make up`.
+
+Useful commands while developing:
+
+```bash
+make logs
+make shell
+make down
 ```
 
 ---
 
 ## Environment variables
 
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `APP_SECRET_KEY` | ✅ | — | JWT signing secret |
-| `DATABASE_URL` | ✅ | — | `postgresql://user:pass@host:5432/db` | # pragma: allowlist secret
-| `APP_ENV` | ✗ | `development` | `development \| staging \| production` |
-| `APP_PORT` | ✗ | `8000` | Server port |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | ✗ | `30` | JWT access token lifetime |
-| `REFRESH_TOKEN_EXPIRE_DAYS` | ✗ | `7` | JWT refresh token lifetime |
+| Variable | Required | Notes |
+|----------|----------|-------|
+| `APP_SECRET_KEY` | yes | JWT signing secret |
+| `DATABASE_URL` | yes | canonical runtime database URL |
+| `APP_ENV` | no | defaults to `development` |
+| `APP_PORT` | no | defaults to `8000` |
+| `QDRANT_URL` | yes | canonical Qdrant endpoint |
+| `QDRANT_API_KEY_RO` | yes | read-only key for app + chain |
+| `QDRANT_COLLECTION_NAME` | yes | shared collection identifier |
+| `ANTHROPIC_API_KEY` | yes | required by the imported chain library |
+| `OPENAI_API_KEY` | yes | required by the imported chain library |
+| `LANGSMITH_*` | no | optional tracing |
 
-The full list of required variables (including chain / Qdrant) is in [../.env.example](../.env.example).
+The full cross-repo contract is documented in [../.env.example](../.env.example).
+
+---
+
+## Health endpoints
+
+| Path | Purpose |
+|------|---------|
+| `/health` | backwards-compatible liveness alias |
+| `/health/live` | container liveness probe |
+| `/health/ready` | readiness probe that verifies the database pool |
+
+`/health/ready` calls `SessionStore.ping()` and returns `503` if the database
+cannot serve a simple query.
 
 ---
 
 ## Database
 
-User data (users, sessions, messages) is stored in **PostgreSQL** via an `asyncpg` connection pool. The `SessionStore` class (`session/store.py`) creates the three tables on startup using `CREATE TABLE IF NOT EXISTS`.
+User data (users, sessions, messages) is stored in **PostgreSQL** via an
+`asyncpg` connection pool. `SessionStore` creates the required tables on startup
+using `CREATE TABLE IF NOT EXISTS`.
 
-For local development, start the database with `make db-start`. To migrate existing data from a SQLite `movie_finder.db`, use `make db-migrate`.
+Local development details:
 
-In production the database is **Azure Database for PostgreSQL Flexible Server** — connection credentials are injected from Azure Key Vault as environment variables.
+- `docker-compose.yml` starts a `postgres` service for the app
+- `docker/postgres/init/01-create-test-database.sql` creates `movie_finder_test`
+- `make test` points pytest at that dedicated test database
+
+Production details:
+
+- Azure Database for PostgreSQL Flexible Server
+- canonical Key Vault secret name: `postgres-url`
+
+If you need to migrate old local SQLite data, use
+`scripts/migrate_sqlite_to_postgres.py` from an attached backend container so
+the interpreter and dependencies match the supported Docker-only workflow.
 
 ---
 
 ## Integration with chain
 
-The app imports `chain.compile_graph` in the lifespan handler:
+The app compiles the LangGraph pipeline once during lifespan startup:
 
 ```python
 from chain import compile_graph
 
-graph = compile_graph()  # singleton per process
-# Streaming: graph.astream_events(input, config={"configurable": {"thread_id": session_id}})
+graph = compile_graph()
 ```
 
-The graph is compiled once at startup and shared across all requests via the `get_graph` dependency.
+That compiled graph is then shared across requests through dependency injection.
+
+Current boundary:
+
+- the app root workflow supports importing `chain` and `imdbapi`
+- standalone child-repo task/debug surfaces are still owned by their own issues
 
 ---
 
 ## Testing
 
 Tests live in `app/tests/`. They use:
-- A real PostgreSQL database (`DATABASE_URL` env var, default `localhost:5432/movie_finder_test`)
-- A fully mocked LangGraph (no chain or LLM calls)
-- FastAPI's `dependency_overrides` for store and graph injection
+
+- a real PostgreSQL database
+- a mocked graph dependency
+- FastAPI dependency overrides for store and graph injection
+
+Run them through the backend root contract:
 
 ```bash
-# Requires a running PostgreSQL (make db-start uses a different DB name by default)
-# For tests, start postgres and then:
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/movie_finder_test \ # pragma: allowlist secret
-    uv run pytest app/tests/ -v
+make test
+make test-coverage
 ```
 
-Or simply:
-```bash
-make db-start && make test-app
-```
+`make test-coverage` writes:
+
+- `app-coverage.xml`
+- `htmlcov/app/`
+
+In VS Code, the Python Test Explorer is configured for `app/tests/` only in this
+iteration, and the attached-container launch configs provide debug entry points
+for the app test suite.

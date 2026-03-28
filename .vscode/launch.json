@@ -2,76 +2,76 @@
   "version": "0.2.0",
   "configurations": [
 
-    // ── FastAPI application (app/) ──────────────────────────────────────────
+    // ── Backend app (attached container) ───────────────────────────────────
+    // Start the stack with `make up`, then use:
+    //   Dev Containers: Attach to Running Container...
+    // These launch configs are intentionally limited to the backend-owned app
+    // slice in this iteration; child repo debug profiles stay with child issues.
     {
-      "name": "app: FastAPI dev server",
+      "name": "app: FastAPI dev server (backend container)",
       "type": "debugpy",
       "request": "launch",
       "module": "uvicorn",
       "args": ["app.main:app", "--reload", "--host", "0.0.0.0", "--port", "8000"],
       "jinja": true,
       "envFile": "${workspaceFolder}/.env",
-      "python": "${workspaceFolder}/.venv/bin/python",
-      "cwd": "${workspaceFolder}"
+      "python": "/opt/venv/bin/python",
+      "cwd": "${workspaceFolder}",
+      "justMyCode": false
     },
 
-    // ── chain/ — LangGraph pipeline ────────────────────────────────────────
+    // ── pytest — backend app only ──────────────────────────────────────────
+    // Tests point at the dedicated `movie_finder_test` database created by the
+    // postgres init script under docker/postgres/init/.
     {
-      "name": "chain: run chat.py (interactive)",
-      "type": "debugpy",
-      "request": "launch",
-      "program": "${workspaceFolder}/chain/chat.py",
-      "envFile": "${workspaceFolder}/chain/.env",
-      "python": "${workspaceFolder}/.venv/bin/python",
-      "cwd": "${workspaceFolder}/chain",
-      "console": "integratedTerminal"
-    },
-
-    // ── rag_ingestion/ — Standalone pipeline ───────────────────────────────
-    // Note: uses its own .venv — run `uv sync` in rag_ingestion/ first
-    {
-      "name": "rag: run ingestion pipeline",
-      "type": "debugpy",
-      "request": "launch",
-      "module": "src.main",
-      "envFile": "${workspaceFolder}/rag_ingestion/.env",
-      "python": "${workspaceFolder}/rag_ingestion/.venv/bin/python",
-      "cwd": "${workspaceFolder}/rag_ingestion",
-      "console": "integratedTerminal"
-    },
-
-    // ── pytest — workspace members (app, chain, imdbapi) ───────────────────
-    {
-      "name": "pytest: all workspace tests",
+      "name": "pytest: app tests (backend container)",
       "type": "debugpy",
       "request": "launch",
       "module": "pytest",
-      "args": ["app/tests/", "chain/tests/", "imdbapi/tests/", "--asyncio-mode=auto", "-v"],
+      "args": ["app/tests/", "--asyncio-mode=auto", "-v"],
+      "env": {
+        "DATABASE_URL": "postgresql://movie_finder:devpassword@postgres:5432/movie_finder_test" // pragma: allowlist secret
+      },
       "envFile": "${workspaceFolder}/.env",
-      "python": "${workspaceFolder}/.venv/bin/python",
-      "cwd": "${workspaceFolder}"
+      "python": "/opt/venv/bin/python",
+      "cwd": "${workspaceFolder}",
+      "justMyCode": false
     },
     {
-      "name": "pytest: current file",
+      "name": "pytest: current app test file (backend container)",
       "type": "debugpy",
       "request": "launch",
       "module": "pytest",
       "args": ["${file}", "--asyncio-mode=auto", "-v"],
+      "env": {
+        "DATABASE_URL": "postgresql://movie_finder:devpassword@postgres:5432/movie_finder_test" // pragma: allowlist secret
+      },
       "envFile": "${workspaceFolder}/.env",
-      "python": "${workspaceFolder}/.venv/bin/python",
-      "cwd": "${workspaceFolder}"
+      "python": "/opt/venv/bin/python",
+      "cwd": "${workspaceFolder}",
+      "justMyCode": false
     },
-
-    // ── pytest — rag_ingestion (standalone venv) ───────────────────────────
     {
-      "name": "pytest: rag_ingestion tests",
+      "name": "pytest: app tests with coverage (backend container)",
       "type": "debugpy",
       "request": "launch",
       "module": "pytest",
-      "args": ["tests/", "-v"],
-      "envFile": "${workspaceFolder}/rag_ingestion/.env",
-      "python": "${workspaceFolder}/rag_ingestion/.venv/bin/python",
-      "cwd": "${workspaceFolder}/rag_ingestion"
+      "args": [
+        "app/tests/",
+        "--asyncio-mode=auto",
+        "-v",
+        "--cov=app",
+        "--cov-report=term-missing",
+        "--cov-report=xml:app-coverage.xml",
+        "--cov-report=html:htmlcov/app"
+      ],
+      "env": {
+        "DATABASE_URL": "postgresql://movie_finder:devpassword@postgres:5432/movie_finder_test" // pragma: allowlist secret
+      },
+      "envFile": "${workspaceFolder}/.env",
+      "python": "/opt/venv/bin/python",
+      "cwd": "${workspaceFolder}",
+      "justMyCode": false
     }
   ]
 }

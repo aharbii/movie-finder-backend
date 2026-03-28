@@ -5,7 +5,9 @@ Foundational mandate for the `movie-finder-backend` (`backend/`).
 ---
 
 ## What this submodule does
-FastAPI backend — HTTP/SSE API layer and `uv` workspace root.
+
+FastAPI backend — HTTP/SSE API layer and backend integration root.
+
 - **Auth:** JWT (python-jose, bcrypt)
 - **Sessions:** PostgreSQL 16 via asyncpg
 - **Streaming:** SSE proxies LangGraph pipeline events
@@ -14,14 +16,16 @@ FastAPI backend — HTTP/SSE API layer and `uv` workspace root.
 ---
 
 ## Technology stack
+
 - Python 3.13, FastAPI 0.115+
-- `uv` workspace root
+- Docker-first local development from the backend root
 - `ruff` (line-length 100), `mypy --strict`
 - `pytest --asyncio-mode=auto`
 
 ---
 
 ## Design patterns
+
 - **Dependency injection:** Use FastAPI `Depends()` for shared resources.
 - **Repository:** Data access lives in repository classes.
 - **Configuration:** Pydantic `BaseSettings` for env vars.
@@ -30,6 +34,7 @@ FastAPI backend — HTTP/SSE API layer and `uv` workspace root.
 ---
 
 ## Coding standards
+
 - `mypy --strict` must pass.
 - Async all the way — no blocking I/O.
 - Docstrings required (Google style).
@@ -38,10 +43,31 @@ FastAPI backend — HTTP/SSE API layer and `uv` workspace root.
 ---
 
 ## Common tasks
+
+- `make init`
+- `make up`
+- `make down`
+- `make logs`
+- `make shell`
 - `make lint`
+- `make format`
+- `make typecheck`
 - `make test`
-- `make build` (Docker)
-- `make run` (Docker Compose)
+- `make test-coverage`
+- `make pre-commit`
+
+---
+
+## Current iteration boundary
+
+This backend root now standardizes the Docker-only app workflow. Do not take
+ownership of the standalone child repo surfaces from here yet:
+
+- `movie-finder-chain#9`
+- `imdbapi-client#3`
+- `movie-finder-rag#13`
+
+Record dependencies and handoffs as issue comments instead.
 
 ---
 
@@ -64,19 +90,20 @@ FastAPI backend — HTTP/SSE API layer and `uv` workspace root.
 
 ---
 
-## VSCode setup
+## VS Code setup
 
-`backend/.vscode/` covers **all backend sub-packages** — opening `backend/` as a workspace
-gives full lint, test, debug, and format capabilities for app/, chain/, imdbapi/, and rag_ingestion/.
+`backend/.vscode/` now separates host-run tasks from attached-container Python
+tooling.
 
-- `settings.json` — interpreter `backend/.venv`, Ruff format-on-save, mypy strict
-- `extensions.json` — Python, debugpy, Ruff, mypy, TOML, Docker, GitLens
-- `launch.json` — FastAPI dev server · chain chat.py · rag pipeline · pytest all/per-package
-- `tasks.json` — per-package lint/test + `lint: all` + `test: all` aggregates + pre-commit per package
+- `tasks.json` — host tasks that call `make <target>`
+- `launch.json` — backend app + backend app test debug configs
+- `settings.json` — interpreter `/opt/venv/bin/python`, pytest discovery for `app/tests/`,
+  extraPaths for `app/src`, `chain/src`, and `imdbapi/src`
+- `extensions.json` — Remote Containers, Pylance, Ruff, Docker, Makefile, Coverage Gutters
 
-**Interpreters:** `uv sync --all-packages` from `backend/` (workspace members);
-`uv sync` from `backend/rag_ingestion/` separately (standalone project).
+Run `make up`, then attach VS Code to the running `backend` container.
 
-**Modifying VSCode configs:** keep the hierarchy — child task must be re-exposed in parent
-with an explicit `options.cwd`. Update `CLAUDE.md`, `GEMINI.md`, `AGENTS.md`, and
+Child repo debug/task surfaces remain owned by their own issues for now.
+
+**Modifying VSCode configs:** update `CLAUDE.md`, `GEMINI.md`, `AGENTS.md`, and
 the repo's `.github/copilot-instructions.md` after.

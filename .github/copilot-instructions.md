@@ -1,9 +1,10 @@
 # GitHub Copilot — movie-finder-backend
 
-FastAPI backend workspace for Movie Finder. This repo is a `uv` workspace root containing
-four Python packages: `app/`, `chain/`, `imdbapi/`, and `rag_ingestion/`.
+FastAPI backend workspace for Movie Finder. This repo is the backend integration
+root and currently defines the **Docker-only local development contract for the
+backend app stack**.
 
-Parent project: `aharbii/movie-finder` — all issues created there first, then linked here.
+Parent project: `aharbii/movie-finder` — create cross-repo tracker issues there first.
 
 ---
 
@@ -12,26 +13,29 @@ Parent project: `aharbii/movie-finder` — all issues created there first, then 
 | Path | Role |
 |---|---|
 | `app/` | FastAPI routes, auth (JWT), SSE streaming, PostgreSQL via asyncpg |
-| `chain/` | LangGraph 8-node AI pipeline (submodule → `aharbii/movie-finder-chain`) |
+| `chain/` | LangGraph AI pipeline (submodule → `aharbii/movie-finder-chain`) |
 | `imdbapi/` | Async IMDb REST client (submodule → `aharbii/imdbapi-client`) |
 | `rag_ingestion/` | Offline embedding ingestion (submodule → `aharbii/movie-finder-rag`) |
-| `Makefile` | `make lint`, `make test`, `make lint-fix`, per-package targets |
-| `pyproject.toml` | uv workspace root + shared tool config (ruff, mypy) |
+| `Makefile` | Docker-only backend app targets: `init`, `up`, `down`, `logs`, `shell`, `lint`, `format`, `typecheck`, `test`, `test-coverage`, `pre-commit` |
+| `docker-compose.yml` | backend app local stack (`postgres` + `backend`) |
+| `Dockerfile` | dev + runtime images |
+| `Jenkinsfile` | backend pipeline |
 
-`rag_ingestion/` is a **standalone uv project** (not a workspace member) — it has its own
-`.venv`. All other packages share `backend/.venv` (`uv sync --all-packages` from this root).
+`rag_ingestion/` is a standalone child repo and is intentionally excluded from
+the backend dev image in this iteration.
 
 ---
 
 ## Python standards
 
-- Python 3.13, `uv` workspace, `ruff` + `mypy --strict`, line length **100**
-- Type annotations required on all public functions and methods
-- No bare `except:` — catch specific exceptions
-- No `os.getenv()` — use `config.py` + Pydantic `BaseSettings`
-- Async all the way — never block an async context
-- Docstrings on all public classes and functions (Google style)
-- Tests: `pytest --asyncio-mode=auto`. Mock at HTTP boundary — no real network calls.
+- Python 3.13, Docker-first local workflow
+- `ruff` + `mypy --strict`, line length **100**
+- Type annotations required on public functions and methods
+- No bare `except:`
+- No scattered `os.getenv()` in business logic
+- Async all the way
+- Docstrings on public classes and functions (Google style)
+- Tests: `pytest --asyncio-mode=auto`; no real network calls in unit tests
 
 ---
 
@@ -39,56 +43,67 @@ Parent project: `aharbii/movie-finder` — all issues created there first, then 
 
 | Pattern | Where | Rule |
 |---|---|---|
-| **Dependency injection** | `app/` routes | `Depends()` for db pool, auth, config — never instantiate inside handlers |
-| **Repository** | Database layer | No raw SQL in route handlers — all data access in repository classes |
-| **Configuration object** | All packages | Settings loaded once in `config.py` / Pydantic `BaseSettings` |
-| **Adapter** | `imdbapi/` | Client maps raw HTTP responses to internal domain types |
-| **Strategy** | Embedding providers | New provider = new class, no `if provider == "openai"` branching |
-| **State machine** | `chain/` LangGraph | New behaviour = new node or edge, not branching inside existing nodes |
-| **Factory** | `chain/graph.py` | Node construction centralised; nodes are pure functions |
+| **Dependency injection** | `app/` routes | `Depends()` for db pool, auth, config, graph |
+| **Repository** | Database layer | No raw SQL in route handlers |
+| **Configuration object** | All packages | Settings live in `config.py` / Pydantic `BaseSettings` |
+| **SSE proxy** | `app/routers/chat.py` | Route streams events; business logic stays in `chain/` |
 
 ---
 
-## Pre-commit hooks
+## Current iteration boundary
+
+This repo now standardizes the backend app Docker contract only.
+
+Do not take over the standalone child repo tooling from here yet:
+
+- `movie-finder-chain#9`
+- `imdbapi-client#3`
+- `movie-finder-rag#13`
+
+If a backend-root change depends on one of those repos, document the dependency
+or handoff as an issue comment instead of silently expanding scope.
+
+---
+
+## Developer workflow
 
 ```bash
-uv run pre-commit install     # once per clone
-uv run pre-commit run --all-files
+make init
+make up
+make down
+make logs
+make shell
+make lint
+make format
+make typecheck
+make test
+make test-coverage
+make pre-commit
 ```
 
-Hooks: `trailing-whitespace`, `end-of-file-fixer`, `check-yaml`, `check-merge-conflict`,
-`detect-private-key`, `detect-secrets`, `mypy --strict`, `ruff-check --fix`, `ruff-format`.
-`app/` mypy config adds `fastapi` as an additional dep.
+VS Code workflow:
 
-Never `--no-verify`.
+- run host tasks through `make ...`
+- attach VS Code to the running `backend` container
+- use `/opt/venv/bin/python` inside that container
+- Python analysis should see `app/src`, `chain/src`, and `imdbapi/src`
+- Python Test Explorer is configured for `app/tests/` only in this iteration
 
 ---
 
-## Makefile targets
+## Secret contract
 
-```bash
-make lint          # ruff + mypy (all packages)
-make lint-fix      # ruff --fix + ruff format
-make test          # all packages
-make test-app      # FastAPI app (requires make db-start)
-make test-chain    # LangGraph chain
-make test-imdbapi  # IMDb client
-make test-rag      # RAG ingestion
-make db-start      # Start local PostgreSQL via Docker
-```
+Canonical Qdrant variables:
 
----
+- `QDRANT_URL`
+- `QDRANT_API_KEY_RO`
+- `QDRANT_COLLECTION_NAME`
+- `QDRANT_API_KEY_RW` (rag only)
+- `KAGGLE_API_TOKEN` (rag only)
 
-## Known open issues (highest priority)
-
-| # | Title |
-|---|---|
-| #2 | `MemorySaver` non-persistent — breaks multi-replica |
-| #3 | No Alembic migrations, no DB indexes |
-| #4 | No rate limiting on any endpoint |
-| #5 | Refresh tokens cannot be revoked |
-| #7 | OpenAI + Qdrant clients re-created per LangGraph node |
-| #8 | IMDb retry base delay 30 s — blocks SSE stream |
+Do not reintroduce the old names in docs or `.env.example`. The backend compose
+file may still export legacy aliases internally as a temporary bridge until the
+child chain issue lands.
 
 ---
 
@@ -108,18 +123,3 @@ make db-start      # Start local PostgreSQL via Docker
   requested.
 - PR descriptions must disclose the AI authoring tool + model. Any AI-assisted review comment or
   approval must also disclose the review tool + model.
-
----
-
-## Cross-cutting — check for every change
-
-1. GitHub issue in `aharbii/movie-finder` (parent) + linked child issue here only if this repo changes, using the current templates and recent examples
-2. Branch: `feature/`, `fix/`, `chore/` (kebab-case) from `main` unless stacking is explicitly requested
-3. ADR if tech stack, pattern, or external dependency changes
-4. `.env.example` updated in affected repos
-5. `Dockerfile` + `docker-compose.yml` updated
-6. `Jenkinsfile` reviewed (new stages, credentials, env vars)
-7. PlantUML diagrams in `docs/architecture/plantuml/` updated
-8. Structurizr `docs/architecture/workspace.dsl` updated
-9. All sibling submodules assessed for impact
-10. Coverage must not regress

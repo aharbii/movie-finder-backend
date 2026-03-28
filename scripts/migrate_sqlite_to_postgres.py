@@ -3,12 +3,13 @@
 
 Usage
 -----
-    # Activate the backend venv first, then run from backend/:
-    uv run python scripts/migrate_sqlite_to_postgres.py [sqlite_path]
+    # Run from backend/ through the Docker-only backend contract:
+    docker compose run --rm backend python scripts/migrate_sqlite_to_postgres.py [sqlite_path]
 
     # Or with an explicit target database:
     DATABASE_URL=postgresql://user:pass@host:5432/dbname \\ # pragma: allowlist secret
-        uv run python scripts/migrate_sqlite_to_postgres.py movie_finder.db
+        docker compose run --rm backend \
+            python scripts/migrate_sqlite_to_postgres.py movie_finder.db
 
 Environment variables
 ---------------------

@@ -39,6 +39,11 @@ class SessionStore:
             await self._pool.close()
             self._pool = None
 
+    async def ping(self) -> None:
+        """Verify that the backing database pool can serve a simple query."""
+        async with self._p.acquire() as conn:
+            await conn.execute("SELECT 1")
+
     @property
     def _p(self) -> asyncpg.Pool[asyncpg.Record]:
         if self._pool is None:

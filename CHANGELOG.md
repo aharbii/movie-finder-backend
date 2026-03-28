@@ -8,8 +8,18 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-<!-- Add new changes here under the appropriate subsection. -->
-<!-- Subsections: Added, Changed, Deprecated, Removed, Fixed, Security -->
+### Added
+
+- Docker-only backend-root coverage workflow via `make test-coverage`
+- Local postgres bootstrap SQL for the dedicated `movie_finder_test` database
+- `/health/live` and `/health/ready` probes for container liveness and database readiness
+
+### Changed
+
+- Standardized the backend root on a Docker-only local development contract for the app stack
+- Restored detailed inline guidance across the backend docs, scripts, VS Code config, and agent instruction files
+- Updated Jenkins and Azure provisioning to the canonical Qdrant secret names from the infrastructure contract
+- Clarified that child repo standalone workflows remain owned by their own issues in this iteration
 
 ---
 

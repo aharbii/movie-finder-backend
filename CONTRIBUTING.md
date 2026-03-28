@@ -1,48 +1,98 @@
 # Contributing to Movie Finder Backend
 
-This guide covers the shared conventions for all teams working in this monorepo. Each subproject also has its own `CONTRIBUTING.md` with team-specific details.
+This guide covers the shared conventions for the **backend-owned** slice of the
+repo in the current Docker-only iteration. The child repos still keep their own
+repo-local rollout issues and should not be folded into this root workflow
+without updating those issue threads first.
 
 ---
 
 ## Table of contents
 
 1. [Development setup](#development-setup)
-2. [Branching strategy](#branching-strategy)
-3. [Commit messages](#commit-messages)
-4. [Pull requests](#pull-requests)
-5. [Code standards](#code-standards)
-6. [Testing requirements](#testing-requirements)
-7. [Working with submodules](#working-with-submodules)
-8. [Release process](#release-process)
-9. [Jenkins CI](#jenkins-ci)
+2. [VS Code workflow](#vs-code-workflow)
+3. [Branching strategy](#branching-strategy)
+4. [Commit messages](#commit-messages)
+5. [Pull requests](#pull-requests)
+6. [Code standards](#code-standards)
+7. [Testing requirements](#testing-requirements)
+8. [Working with submodules](#working-with-submodules)
+9. [Release process](#release-process)
+10. [Jenkins CI](#jenkins-ci)
 
 ---
 
 ## Development setup
 
-Run the one-time setup script after cloning:
+Run the backend setup flow after cloning:
 
 ```bash
 git clone --recurse-submodules https://github.com/aharbii/movie-finder-backend.git
 cd movie-finder-backend
-make setup
-$EDITOR .env   # fill in your API keys
+
+cp .env.example .env
+$EDITOR .env
+
+make init
+make up
 ```
 
-`make setup` does the following:
-1. Initializes all git submodules
-2. Installs workspace packages with dev tools (`uv sync --group dev`)
-3. Installs pre-commit hooks (`pre-commit install`)
-4. Copies `.env.example` → `.env` if `.env` does not exist
-
-### Working on a submodule independently
+You can also use the helper script:
 
 ```bash
-cd chain/          # or imdbapi/, rag_ingestion/
-uv sync --group dev
-uv run pre-commit install
-cp .env.example .env && $EDITOR .env
+./scripts/setup.sh
 ```
+
+Supported root-level quality commands:
+
+```bash
+make lint
+make format
+make typecheck
+make test
+make test-coverage
+make pre-commit
+```
+
+Use `make down` to stop the local stack.
+
+### What is intentionally not part of this root setup yet
+
+- Standalone `chain/` lint/test/debug tasks
+- Standalone `imdbapi/` lint/test/debug tasks
+- Standalone `rag_ingestion/` lint/test/debug tasks
+- Parent-level orchestration of all child repo pipelines from this root
+
+Those capabilities are still owned by the child repo issues and will come back
+to the backend root in a later integration iteration.
+
+---
+
+## VS Code workflow
+
+The committed `.vscode/` config is designed around the Docker-only backend app
+contract:
+
+- **Host tasks** call `make ...`
+- **Python interpreter** lives at `/opt/venv/bin/python` inside the attached
+  `backend` container
+- **Code navigation** resolves `app/src`, `chain/src`, and `imdbapi/src`
+- **Test Explorer** is configured for `app/tests/` only in this iteration
+
+Recommended workflow:
+
+1. Run `make up`
+2. Attach VS Code to the running `backend` container
+3. Use the committed tasks and launch configurations from inside that session
+
+Coverage workflow:
+
+```bash
+make test-coverage
+```
+
+This writes `app-coverage.xml` and `htmlcov/app/` for local inspection or VS Code
+coverage extensions.
 
 ---
 
@@ -50,20 +100,23 @@ cp .env.example .env && $EDITOR .env
 
 We follow **trunk-based development** with short-lived feature branches.
 
-```
-main            ← always deployable; protected; requires PR + review
-  └── feature/<short-description>    ← new feature
-  └── fix/<short-description>        ← bug fix
-  └── chore/<short-description>      ← tooling, deps, CI changes
-  └── docs/<short-description>       ← documentation only
-  └── hotfix/<short-description>     ← urgent production fix
+```text
+main            always deployable; protected; requires PR + review
+  feature/<short-description>
+  fix/<short-description>
+  chore/<short-description>
+  docs/<short-description>
+  hotfix/<short-description>
 ```
 
-**Rules:**
+Rules:
+
 - Never push directly to `main`
-- Branch names use kebab-case: `feature/add-gemini-embedding`
+- Branch names use lowercase kebab-case
 - Delete the branch after the PR is merged
-- Keep branches short-lived (ideally merged within a sprint)
+- Keep branches short-lived
+- If the work spans multiple repos, align the issue comments first before
+  broadening scope
 
 ---
 
@@ -71,36 +124,21 @@ main            ← always deployable; protected; requires PR + review
 
 We use [Conventional Commits](https://www.conventionalcommits.org/):
 
-```
+```text
 <type>(<scope>): <short summary>
-
-[optional body]
-
-[optional footer]
 ```
 
-**Types:**
+Examples:
 
-| Type | When to use |
-|------|-------------|
-| `feat` | New feature or capability |
-| `fix` | Bug fix |
-| `chore` | Tooling, dependencies, CI, scripts |
-| `docs` | Documentation only |
-| `test` | Adding or fixing tests |
-| `refactor` | Code change that is not a feature or fix |
-| `perf` | Performance improvement |
-| `ci` | CI pipeline changes |
+- `feat(app): add readiness probe`
+- `chore(backend): standardize docker-only tooling`
+- `docs(backend): clarify backend-only iteration boundaries`
 
-**Scope** is optional but recommended — use the package name or area:
-`feat(chain): add gemini embedding provider`
-`fix(imdbapi): handle 429 rate-limit retry correctly`
-`chore(rag): bump qdrant-client to v1.14`
+Summary rules:
 
-**Summary rules:**
 - Lowercase, no period at the end
-- Imperative mood ("add", not "added" or "adds")
-- ≤ 72 characters
+- Imperative mood
+- Prefer 72 characters or fewer
 
 ---
 
@@ -109,100 +147,99 @@ We use [Conventional Commits](https://www.conventionalcommits.org/):
 ### Before opening a PR
 
 ```bash
-make lint        # must pass with zero errors
-make test        # must pass with zero failures
+make lint
+make typecheck
+make test
+make pre-commit
 ```
 
-All pre-commit hooks run automatically on `git commit`. If they fail, fix the reported issues before retrying.
+Use the pull request template in `.github/PULL_REQUEST_TEMPLATE.md`.
 
-### PR title
+Before creating or editing an issue or PR:
 
-Same format as commit messages:
-`feat(chain): add streaming node for real-time output`
+- inspect the matching issue template
+- inspect the PR template
+- inspect one recent example of the same type
 
-### PR description
+If AI tools are used:
 
-Use the pull request template (`.github/PULL_REQUEST_TEMPLATE.md`). At minimum, fill in:
-- **What** — what changed and why
-- **How to test** — steps a reviewer can follow to verify
-- **Checklist** — lint, tests, docs, env vars
-
-Before creating or editing an issue or PR, inspect the matching issue template, the PR template,
-and one recent example of the same type.
-
-If AI tools are used to author the PR, disclose the tool and model in the PR description.
-If AI tools are used in review comments or approval, disclose the review tool and model there too.
+- disclose the authoring tool and model in the PR description
+- disclose any AI-assisted review tool and model in review comments or approvals
 
 ### Review requirements
 
-- Minimum **1 approval** from a team member who didn't author the PR
-- All CI stages must be green before merge
-- Resolve all reviewer comments before merging
+- Minimum **1 approval** from a non-author reviewer
+- All CI checks must be green before merge
+- Resolve reviewer comments before merge
+- Use **squash and merge** for normal feature/fix/chore branches
 
-### Merge strategy
-
-Use **Squash and merge** for feature branches to keep `main` history clean.
-Use **Merge commit** only for submodule version bumps so the pointer commit is preserved.
+If the change intentionally stops short of child repo work, say that explicitly
+in the PR description and on the linked issue thread.
 
 ---
 
 ## Code standards
 
-All code is enforced by pre-commit hooks and CI. There is no manual style negotiation.
+All code is enforced by pre-commit hooks and CI.
 
-### Linting & formatting — ruff
+### Python standards
+
+- Python 3.13
+- `ruff`
+- `mypy --strict`
+- line length: **100**
+- Google-style docstrings on public functions and classes
+- async all the way for app code
+
+### Supported root targets
 
 ```bash
-make lint-fix    # auto-fix safe violations + format
-make lint        # check only (what CI runs)
+make lint
+make format
+make typecheck
+make test
+make test-coverage
+make pre-commit
 ```
 
-Configuration is in each project's `pyproject.toml` under `[tool.ruff]`.
-Line length: **100 characters**. Target version: **py313**.
+### Secrets detection
 
-### Type checking — mypy
-
-```bash
-uv run mypy chain/src/ imdbapi/src/
-```
-
-Strict mode is enabled. All public functions must have type annotations. Use `# type: ignore[<code>]` only as a last resort, always with a comment explaining why.
-
-### Secrets detection — detect-secrets
-
-`detect-secrets` runs on every commit. If it flags a false positive, add an inline comment:
+If `detect-secrets` flags a false positive, add an inline allowlist comment:
 
 ```python
-some_variable = "not-actually-a-secret"  # pragma: allowlist secret
-```
-
-To update the secrets baseline after adding a legitimate false-positive allowlist:
-```bash
-detect-secrets scan > .secrets.baseline
+value = "not-a-secret"  # pragma: allowlist secret
 ```
 
 ---
 
 ## Testing requirements
 
-- **Unit tests required** for all new logic
-- **No real API calls** in tests — mock at the HTTP boundary (`respx` for httpx, `pytest-mock` for LLM clients)
-- Coverage should not decrease on any PR (CI enforces this via Cobertura reports)
-- Tests go in `tests/` mirroring the `src/` structure
+- New logic needs unit tests
+- No real network calls in tests
+- Coverage should not regress
+- Tests should mirror the `src/` structure
+
+The backend root currently guarantees the backend app test flow only:
 
 ```bash
-make test         # runs chain + imdbapi tests
-make test-all     # also runs rag_ingestion tests
-make test-chain   # only chain
-make test-imdbapi # only imdbapi
-make test-rag     # only rag_ingestion
+make test
+make test-coverage
 ```
+
+`make test` runs inside Docker and points pytest at the dedicated
+`movie_finder_test` database in the local postgres service.
+
+If a change affects a child repo too, leave the parent/backend issue comment trail
+clear about which verification belongs to which repo.
 
 ---
 
 ## Working with submodules
 
-### Updating a submodule to the latest commit on its main branch
+This repo is the backend integration root. The child repos keep their own release
+cadence and their own issue-owned rollout work.
+
+### Updating a submodule pointer
 
 ```bash
 cd chain/   # or imdbapi/ or rag_ingestion/
@@ -212,16 +249,6 @@ git add chain/
 git commit -m "chore(chain): bump to latest main"
 ```
 
-### Pinning a submodule to a specific release
-
-```bash
-cd chain/
-git fetch --tags && git checkout v1.2.0
-cd ..
-git add chain/
-git commit -m "chore(chain): pin to v1.2.0"
-```
-
 ### After pulling backend changes that moved a submodule pointer
 
 ```bash
@@ -229,68 +256,46 @@ git pull
 git submodule update --init --recursive
 ```
 
-### After someone else adds a new submodule
+### Scope rule for this iteration
 
-```bash
-git pull
-git submodule update --init --recursive   # picks up the new submodule
-```
+Do not expand the backend root into child-repo-only tooling as a side effect of
+an app-stack change. Document the handoff in the relevant issue comment instead.
 
 ---
 
 ## Release process
 
-Each repo is released independently with semantic versioning (`vMAJOR.MINOR.PATCH`).
+Each repo is versioned independently with semantic versioning.
 
-```
-MAJOR — breaking API or behavior change
-MINOR — new feature, backwards compatible
-PATCH — bug fix, backwards compatible
-```
-
-**Steps:**
-
-1. Update `version` in `pyproject.toml`
-2. Update `CHANGELOG.md` — move items from `[Unreleased]` to the new version section
-3. Commit: `git commit -m "chore: release v1.2.0"`
-4. Tag: `git tag v1.2.0`
-5. Push: `git push origin main --tags`
-
-Jenkins detects the tag and automatically runs the release pipeline (lint → test → build Docker image → push to registry).
-
-After releasing a submodule, update the pointer in the backend repo:
 ```bash
-cd chain/ && git checkout v1.2.0 && cd ..
-git add chain/
-git commit -m "chore(chain): release v1.2.0"
-git push
+git add pyproject.toml CHANGELOG.md
+git commit -m "chore: release v1.2.0"
+git tag v1.2.0
+git push origin main --tags
 ```
+
+Jenkins handles the release pipeline after the tag is pushed.
+
+After releasing a child repo, update the pointer here in a dedicated follow-up
+commit or PR.
 
 ---
 
 ## Jenkins CI
 
-### Adding Jenkins credentials
+The backend Jenkins pipeline now validates the backend-owned app slice from this
+repo while the child repos continue landing their own Docker-first updates.
 
-All credentials are stored in Jenkins (never in code). Required credentials per repo are documented at the top of each `Jenkinsfile`.
+Current backend pipeline responsibilities:
 
-Add a credential: **Jenkins → Manage Jenkins → Credentials → System → Global → Add Credentials**
+- check out the workspace with submodules
+- lint and type-check the backend app slice
+- run backend app tests against PostgreSQL
+- build the runtime image
+- deploy the image to Azure Container Apps
 
-### Triggering a manual job
+For Azure bootstrap and secret naming, see:
 
-**rag_ingestion — manual dataset ingestion:**
-1. Open the `movie-finder-rag` pipeline in Jenkins
-2. Click **Build with Parameters**
-3. Set `RUN_INGESTION=true`, `COLLECTION_NAME`, `VECTOR_STORE`
-4. Click **Build**
-5. After success: download `ingestion-outputs.env` artifact, update chain credentials
-
-**backend — manual staging deploy:**
-1. Open the `movie-finder-backend` pipeline
-2. Click **Build with Parameters**
-3. Set `DEPLOY_STAGING=true`
-4. Click **Build**
-
-### PR validation
-
-Jenkins runs automatically on every PR. The pipeline must be green before a PR can be merged. Check the Jenkins build link in the PR status checks.
+- [Jenkinsfile](Jenkinsfile)
+- [deploy/provision.sh](deploy/provision.sh)
+- [INTEGRATION.md](INTEGRATION.md)
