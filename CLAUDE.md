@@ -150,8 +150,11 @@ Never `--no-verify`.
 make init
 make up
 make down
+make ci-down
 make logs
 make shell
+make editor-up
+make editor-down
 make lint
 make format
 make typecheck
@@ -175,7 +178,7 @@ tooling:
   extraPaths for `app/src`, `chain/src`, `imdbapi/src`
 - `extensions.json` — Remote Containers, Pylance, Ruff, Docker, Makefile, Coverage Gutters
 
-**Workflow:** run `make up`, then attach VS Code to the running `backend`
+**Workflow:** run `make editor-up` (or `make up`), then attach VS Code to the running `backend`
 service container.
 
 **Scope note:** code navigation includes `chain/` and `imdbapi/` because the

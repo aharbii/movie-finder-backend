@@ -105,7 +105,7 @@ pipeline {
                 always {
                     sh '''
                         export COMPOSE_PROJECT_NAME="movie-finder-backend-ci-${BUILD_NUMBER}"
-                        make down || true
+                        make ci-down || true
                     '''
                 }
             }
@@ -149,7 +149,7 @@ pipeline {
                     archiveArtifacts artifacts: 'app-coverage.xml', allowEmptyArchive: true
                     sh '''
                         export COMPOSE_PROJECT_NAME="movie-finder-backend-ci-${BUILD_NUMBER}"
-                        make down || true
+                        make ci-down || true
                     '''
                 }
             }

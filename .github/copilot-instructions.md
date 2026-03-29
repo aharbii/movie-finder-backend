@@ -16,7 +16,7 @@ Parent project: `aharbii/movie-finder` — create cross-repo tracker issues ther
 | `chain/` | LangGraph AI pipeline (submodule → `aharbii/movie-finder-chain`) |
 | `imdbapi/` | Async IMDb REST client (submodule → `aharbii/imdbapi-client`) |
 | `rag_ingestion/` | Offline embedding ingestion (submodule → `aharbii/movie-finder-rag`) |
-| `Makefile` | Docker-only backend app targets: `init`, `up`, `down`, `logs`, `shell`, `lint`, `format`, `typecheck`, `test`, `test-coverage`, `pre-commit` |
+| `Makefile` | Docker-only backend app targets: `init`, `up`, `down`, `ci-down`, `editor-up`, `editor-down`, `logs`, `shell`, `lint`, `format`, `typecheck`, `test`, `test-coverage`, `pre-commit` |
 | `docker-compose.yml` | backend app local stack (`postgres` + `backend`) |
 | `Dockerfile` | dev + runtime images |
 | `Jenkinsfile` | backend pipeline |
@@ -81,6 +81,9 @@ or handoff as an issue comment instead of silently expanding scope.
 make init
 make up
 make down
+make ci-down
+make editor-up
+make editor-down
 make logs
 make shell
 make lint
@@ -93,8 +96,8 @@ make pre-commit
 
 VS Code workflow:
 
-- run host tasks through `make ...`
-- attach VS Code to the running `backend` container
+- run `make editor-up` (or `make up`) and run host tasks through `make ...`
+- attach VS Code to the running `backend` service container
 - use `/opt/venv/bin/python` inside that container
 - Python analysis should see `app/src`, `chain/src`, and `imdbapi/src`
 - Python Test Explorer is configured for `app/tests/` only in this iteration

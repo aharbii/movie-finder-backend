@@ -34,7 +34,8 @@ cp .env.example .env
 $EDITOR .env
 
 make init
-make up
+make editor-up    # start only backend for editing/linting
+make up           # start full stack (app + postgres)
 ```
 
 You can also use the helper script:
@@ -54,7 +55,7 @@ make test-coverage
 make pre-commit
 ```
 
-Use `make down` to stop the local stack.
+Use `make editor-down` or `make down` to stop the local containers.
 
 ### What is intentionally not part of this root setup yet
 
@@ -81,8 +82,8 @@ contract:
 
 Recommended workflow:
 
-1. Run `make up`
-2. Attach VS Code to the running `backend` container
+1. Run `make up           # start full stack (app + postgres)`
+2. Attach VS Code to the running `backend` container started from the root
 3. Use the committed tasks and launch configurations from inside that session
 
 Coverage workflow:

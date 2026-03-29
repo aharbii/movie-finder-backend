@@ -46,9 +46,12 @@ FastAPI backend — HTTP/SSE API layer and backend integration root.
 
 - `make init`
 - `make up`
-- `make down`
+- `make down
+- `make ci-down``
 - `make logs`
-- `make shell`
+- `make shell
+- `make editor-up`
+- `make editor-down``
 - `make lint`
 - `make format`
 - `make typecheck`
@@ -101,7 +104,7 @@ tooling.
   extraPaths for `app/src`, `chain/src`, and `imdbapi/src`
 - `extensions.json` — Remote Containers, Pylance, Ruff, Docker, Makefile, Coverage Gutters
 
-Run `make up`, then attach VS Code to the running `backend` container.
+Run `make editor-up` (or `make up`), then attach VS Code to the running `backend` container.
 
 Child repo debug/task surfaces remain owned by their own issues for now.
 

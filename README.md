@@ -141,9 +141,13 @@ Use `make down` when you are done.
 ```bash
 make init           # pull postgres + build the backend dev image
 make up             # start postgres + backend in the background
-make down           # stop and remove local containers
+make down           # stop and remove local stack
+make ci-down        # full cleanup for CI (volumes + images)
 make logs           # follow backend + postgres logs
 make shell          # shell into the running backend container
+
+make editor-up      # start only backend for editing/linting
+make editor-down    # stop the editor container
 
 make lint           # ruff check for app/
 make format         # ruff format for app/
@@ -173,9 +177,9 @@ The committed `.vscode/` config is split intentionally:
 
 Recommended workflow:
 
-1. Run `make up` from the host workspace.
+1. Run `make editor-up` (or `make up`) from the host workspace.
 2. In VS Code, use `Dev Containers: Attach to Running Container...`.
-3. Attach to the `backend` service container started from this repo.
+3. Attach to the `backend` service container (it will be running after `make editor-up` or `make up`).
 4. Use the committed tasks for lifecycle and quality commands.
 5. Use the Python Test Explorer for `app/tests/` only in this iteration.
 
