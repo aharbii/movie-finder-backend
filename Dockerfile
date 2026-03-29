@@ -28,6 +28,13 @@ ENV PYTHONUNBUFFERED=1 \
 # Used by `docker-compose.yml` and VS Code "Attach to Running Container".
 FROM uv-base AS dev
 
+# Install development tools needed for VS Code and quality commands.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN git config --global --add safe.directory /workspace
+
 WORKDIR /workspace
 
 # Keep the interpreter in a stable location so VS Code launch/settings can

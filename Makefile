@@ -61,7 +61,7 @@ help:
 	@echo "    test           Run pytest for app/ inside Docker"
 	@echo "    test-coverage  Run pytest with coverage XML/HTML output"
 	@echo "    pre-commit     Run pre-commit hooks inside Docker"
-	@echo "    check          Convenience alias: lint + typecheck + test"
+	@echo "    check          Convenience alias: lint + typecheck + test (requires Docker)"
 	@echo ""
 	@echo "  Compatibility aliases"
 	@echo "    build          Alias for init"
@@ -112,7 +112,10 @@ test-coverage:
 		--cov-report=html:$(COVERAGE_HTML)
 
 pre-commit:
-	$(COMPOSE) run --rm --no-deps $(SERVICE) pre-commit run --all-files
+	$(COMPOSE) run --rm --no-deps \
+		-e GIT_DIR=/git_metadata \
+		-e GIT_WORK_TREE=/workspace \
+		$(SERVICE) pre-commit run --all-files
 
 build: init
 

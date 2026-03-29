@@ -63,6 +63,16 @@ Do not take over the standalone child repo tooling from here yet:
 If a backend-root change depends on one of those repos, document the dependency
 or handoff as an issue comment instead of silently expanding scope.
 
+### Known open issues (architectural gaps)
+
+| ID | Title | Status / Note |
+|---|---|---|
+| #2 | `MemorySaver` non-persistent | Chat history reset on container restart |
+| #3 | No Alembic migrations | DB schema defined as raw SQL in `store.py` |
+| #4 | No rate limiting | Middleware gap — open for implementation |
+| #9 | No CORS configuration | Defaulting to origin-only; needs SPA alignment |
+| #12 | `UserInDB` exposes hash | Security refinement — exclude `hashed_password` from Pydantic output |
+
 ---
 
 ## Developer workflow

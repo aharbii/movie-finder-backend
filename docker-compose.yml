@@ -47,10 +47,7 @@ services:
       target: dev
     image: movie-finder-backend:dev
     working_dir: /workspace
-    command:
-      - sh
-      - -c
-      - uvicorn app.main:app --reload --host 0.0.0.0 --port ${APP_PORT:-8000}
+    command: ["uvicorn", "app.main:app", "--reload", "--host", "0.0.0.0", "--port", "8000"]
     environment:
       # App runtime
       APP_ENV: ${APP_ENV:-development}
@@ -87,8 +84,26 @@ services:
       CONFIDENCE_THRESHOLD: ${CONFIDENCE_THRESHOLD:-0.3}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     volumes:
-      # Bind-mount the checkout for hot reload and attached-container editing.
-      - .:/workspace
+      # Surgically mount source code for maximum macOS performance.
+      # This avoids the overhead of syncing .git, .venv, and cache folders.
+      - ./app:/workspace/app
+      - ./chain:/workspace/chain
+      - ./imdbapi:/workspace/imdbapi
+      - ./scripts:/workspace/scripts
+      # Mount workspace configuration and documentation.
+      - ./pyproject.toml:/workspace/pyproject.toml
+      - ./uv.lock:/workspace/uv.lock
+      - ./Makefile:/workspace/Makefile
+      - ./README.md:/workspace/README.md
+      - ./CONTRIBUTING.md:/workspace/CONTRIBUTING.md
+      - ./Dockerfile:/workspace/Dockerfile
+      - ./.gitignore:/workspace/.gitignore
+      - ./.pre-commit-config.yaml:/workspace/.pre-commit-config.yaml
+
+      # The Bridge: Mount the submodule's metadata folder (read-only)
+      # so Git can find its history without following relative submodule pointers.
+      - ../.git/modules/backend:/git_metadata:ro
+
       # Tool caches live in named volumes so rebuilds stay fast.
       - uv_cache:/root/.cache/uv
       - pre_commit_cache:/root/.cache/pre-commit
