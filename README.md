@@ -103,12 +103,13 @@ the backend-root workflow in this iteration.
 git clone --recurse-submodules https://github.com/aharbii/movie-finder-backend.git
 cd movie-finder-backend
 
-# 2. Create your local env file
-cp .env.example .env
+# 2. Build the dev image (also creates .env from template and installs git hook)
+make init
+
+# 3. Edit .env with your API keys
 $EDITOR .env
 
-# 3. Build the dev image and start the local stack
-make init
+# 4. Start the local stack
 make up
 
 # 4. Inspect the running stack
@@ -139,23 +140,24 @@ Use `make down` when you are done.
 ## Common development commands
 
 ```bash
-make init           # pull postgres + build the backend dev image
+make init           # build backend dev image, create .env from template, install git hook
 make up             # start postgres + backend in the background
 make down           # stop and remove local stack
 make ci-down        # full cleanup for CI (volumes + images)
 make logs           # follow backend + postgres logs
-make shell          # shell into the running backend container
+make shell          # open zsh shell in the running backend container
 
 make editor-up      # start only backend for editing/linting
 make editor-down    # stop the editor container
 
-make lint           # ruff check for app/
+make lint           # ruff check for app/ (report only)
+make fix            # ruff check --fix + ruff format for app/ (auto-apply)
 make format         # ruff format for app/
 make typecheck      # mypy --strict for app/
 make test           # pytest app/tests/
-make test-coverage  # pytest + coverage XML/HTML for app/
-make pre-commit     # repo hooks inside Docker
-make check          # lint + typecheck + test
+make test-coverage  # pytest + coverage XML/HTML + JUnit for app/
+make pre-commit     # full hook suite (also enforced on git commit)
+make check          # lint + typecheck + test-coverage (CI gate)
 ```
 
 All supported root-level developer workflows go through Docker. The child repos
