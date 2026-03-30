@@ -28,10 +28,17 @@ ENV PYTHONUNBUFFERED=1 \
 # Used by `docker-compose.yml` and VS Code "Attach to Running Container".
 FROM uv-base AS dev
 
-# Install development tools needed for VS Code and quality commands.
+# Install development tools needed for VS Code, quality commands, and make shell.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
+    zsh \
+    make \
+    curl \
     && rm -rf /var/lib/apt/lists/*
+
+# Configure a minimal shell prompt without internet downloads.
+RUN printf 'export PS1="[backend] %n@%m:%~%% "\nalias ls="ls --color=auto"\nalias ll="ls -alF"\n' \
+    > /root/.zshrc
 
 RUN git config --global --add safe.directory /workspace
 

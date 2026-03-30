@@ -93,20 +93,24 @@ pipeline {
             options { skipDefaultCheckout() }
             steps {
                 unstash 'source'
-                sh '''
-                    set -e
-                    export COMPOSE_PROJECT_NAME="movie-finder-backend-ci-${BUILD_NUMBER}"
-                    make init
-                    make lint
-                    make typecheck
-                '''
+                dir('backend') {
+                    sh '''
+                        set -e
+                        export COMPOSE_PROJECT_NAME="movie-finder-backend-ci-${BUILD_NUMBER}"
+                        make init
+                        make lint
+                        make typecheck
+                    '''
+                }
             }
             post {
                 always {
-                    sh '''
-                        export COMPOSE_PROJECT_NAME="movie-finder-backend-ci-${BUILD_NUMBER}"
-                        make ci-down || true
-                    '''
+                    dir('backend') {
+                        sh '''
+                            export COMPOSE_PROJECT_NAME="movie-finder-backend-ci-${BUILD_NUMBER}"
+                            make ci-down || true
+                        '''
+                    }
                 }
             }
         }
@@ -125,32 +129,36 @@ pipeline {
             }
             steps {
                 unstash 'source'
-                sh '''
-                    set -e
-                    export COMPOSE_PROJECT_NAME="movie-finder-backend-ci-${BUILD_NUMBER}"
-                    # Compose publishes host ports even for dependency services, so
-                    # keep them unique per build to avoid collisions on shared agents.
-                    export POSTGRES_HOST_PORT="$((54320 + BUILD_NUMBER % 1000))"
-                    export BACKEND_HOST_PORT="$((55320 + BUILD_NUMBER % 1000))"
-                    export TEST_DATABASE_URL="postgresql://movie_finder:devpassword@postgres:5432/movie_finder_test" # pragma: allowlist secret
-                    make init
-                    docker compose run --rm \
-                        -e DATABASE_URL="$TEST_DATABASE_URL" \
-                        backend pytest app/tests/ \
-                            --cov=app \
-                            --cov-report=xml:app-coverage.xml \
-                            --junitxml=app-test-results.xml \
-                            -v --tb=short
-                '''
+                dir('backend') {
+                    sh '''
+                        set -e
+                        export COMPOSE_PROJECT_NAME="movie-finder-backend-ci-${BUILD_NUMBER}"
+                        # Compose publishes host ports even for dependency services, so
+                        # keep them unique per build to avoid collisions on shared agents.
+                        export POSTGRES_HOST_PORT="$((54320 + BUILD_NUMBER % 1000))"
+                        export BACKEND_HOST_PORT="$((55320 + BUILD_NUMBER % 1000))"
+                        export TEST_DATABASE_URL="postgresql://movie_finder:devpassword@postgres:5432/movie_finder_test" # pragma: allowlist secret
+                        make init
+                        docker compose run --rm \
+                            -e DATABASE_URL="$TEST_DATABASE_URL" \
+                            backend pytest app/tests/ \
+                                --cov=app \
+                                --cov-report=xml:app-coverage.xml \
+                                --junitxml=app-test-results.xml \
+                                -v --tb=short
+                    '''
+                }
             }
             post {
                 always {
-                    junit allowEmptyResults: true, testResults: 'app-test-results.xml'
-                    archiveArtifacts artifacts: 'app-coverage.xml', allowEmptyArchive: true
-                    sh '''
-                        export COMPOSE_PROJECT_NAME="movie-finder-backend-ci-${BUILD_NUMBER}"
-                        make ci-down || true
-                    '''
+                    junit allowEmptyResults: true, testResults: 'backend/app-test-results.xml'
+                    archiveArtifacts artifacts: 'backend/app-coverage.xml', allowEmptyArchive: true
+                    dir('backend') {
+                        sh '''
+                            export COMPOSE_PROJECT_NAME="movie-finder-backend-ci-${BUILD_NUMBER}"
+                            make ci-down || true
+                        '''
+                    }
                 }
             }
         }
@@ -177,12 +185,15 @@ pipeline {
                 }
                 sh 'echo "$ACR_CREDENTIALS_PSW" | docker login "$ACR_SERVER" -u "$ACR_CREDENTIALS_USR" --password-stdin'
                 sh "docker pull ${env.ACR_SERVER}/${env.SERVICE_NAME}:latest || true"
-                sh """
-                    docker build \
-                        --cache-from ${env.ACR_SERVER}/${env.SERVICE_NAME}:latest \
-                        -t ${env.FULL_IMAGE} \
-                        .
-                """
+                // Build from backend/ — that directory is the Docker build context.
+                dir('backend') {
+                    sh """
+                        docker build \
+                            --cache-from ${env.ACR_SERVER}/${env.SERVICE_NAME}:latest \
+                            -t ${env.FULL_IMAGE} \
+                            .
+                    """
+                }
                 sh "docker push ${env.FULL_IMAGE}"
                 script {
                     if (env.BRANCH_NAME == 'main') {
@@ -195,6 +206,16 @@ pipeline {
             post {
                 always {
                     sh 'docker logout "$ACR_SERVER" || true'
+                    // Remove locally-built images after push to prevent Jenkins node storage bloat.
+                    // --rmi local in make ci-down skips images with a custom image: field, so we
+                    // remove the built image explicitly here. Public base images (python:3.13-slim,
+                    // postgres:16-alpine) are NOT removed — they stay cached on the Jenkins node.
+                    sh "docker rmi ${env.FULL_IMAGE} || true"
+                    script {
+                        if (env.BRANCH_NAME == 'main') {
+                            sh "docker rmi ${env.ACR_SERVER}/${env.SERVICE_NAME}:latest || true"
+                        }
+                    }
                 }
             }
         }

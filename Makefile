@@ -2,151 +2,185 @@
 # Movie Finder Backend — Docker-only developer contract
 #
 # Scope of this Makefile:
-#   - Backend app stack owned by this repo (`app/` + local PostgreSQL)
-#   - Source-mounted access to `chain/` and `imdbapi/`, which the app imports
+#   - Backend app stack owned by this repo (app/ + local PostgreSQL)
+#   - Source-mounted access to chain/ and imdbapi/, which the app imports
 #
-# Explicitly out of scope for this iteration:
-#   - Standalone child-repo workflows for `chain/`, `imdbapi/`, `rag_ingestion`
+# Explicitly out of scope:
+#   - Standalone child-repo workflows for chain/, imdbapi/, rag_ingestion/
 #   - Parent-level orchestration of child-repo lint/test/build pipelines
-#
-# Those repo-local extensions are tracked in:
-#   movie-finder-chain#9, imdbapi-client#3, movie-finder-rag#13
 #
 # Usage:
 #   make help
 #   make <target>
 #
-# All supported developer commands execute through Docker Compose so the backend
-# can run beside the parent `movie-finder/` stack without host-Python drift.
+# Typical first-time flow:
+#   make init        # build image + create .env + install git hook
+#   make up          # start full stack (postgres + backend)
+#   make check       # lint + typecheck + tests with coverage
+#
+# When the backend container is already running, quality commands use
+# 'docker compose exec' instead of a new container — faster for interactive dev.
 # =============================================================================
 
-.PHONY: help init up down logs shell lint format typecheck test test-coverage \
+.PHONY: help init up down logs shell lint format fix typecheck test test-coverage \
         pre-commit build run run-dev setup check editor-up editor-down ci-down detect-secrets
 
 .DEFAULT_GOAL := help
 
 COMPOSE ?= docker compose
 SERVICE ?= backend
-
-# Git metadata resolution:
-# When this repo is a submodule (inside movie-finder), its .git is a file
-# pointing to a directory in the parent. We resolve the TRUE path on the host
-# so it can be mounted into the container for pre-commit / versioning tools.
 GIT_DIR_HOST := $(shell git rev-parse --git-dir)
+GIT_HOOKS_DIR := $(GIT_DIR_HOST)/hooks
+
+# Export so docker compose picks it up automatically (avoids per-command prefix).
+export BACKEND_GIT_DIR := $(GIT_DIR_HOST)
 
 # Tests run against a separate database inside the same postgres container so
-# local app data survives a `make test`.
+# local app data survives a 'make test'.
 DB_NAME ?= movie_finder
 DB_USER ?= movie_finder
 DB_PASSWORD ?= devpassword
 TEST_DB_NAME ?= movie_finder_test
 TEST_DATABASE_URL ?= postgresql://$(DB_USER):$(DB_PASSWORD)@postgres:5432/$(TEST_DB_NAME)
 
-# Coverage artifacts are written into the bind-mounted workspace so VS Code
-# extensions such as Coverage Gutters can visualize them from the host.
 APP_PATHS := app/src app/tests
 COVERAGE_XML ?= app-coverage.xml
 COVERAGE_HTML ?= htmlcov/app
 JUNIT_XML ?= test-results/junit.xml
+
+# ---------------------------------------------------------------------------
+# exec when running, run --rm otherwise — avoids container startup overhead
+# for interactive development while remaining correct for CI.
+# ---------------------------------------------------------------------------
+define exec_or_run
+	@if $(COMPOSE) ps --services --status running 2>/dev/null | grep -qx "$(SERVICE)"; then \
+		$(COMPOSE) exec $(SERVICE) $(1); \
+	else \
+		$(COMPOSE) run --rm --no-deps $(SERVICE) $(1); \
+	fi
+endef
 
 help:
 	@echo ""
 	@echo "Movie Finder Backend — available targets"
 	@echo "========================================="
 	@echo ""
+	@echo "  Setup"
+	@echo "    init           Build image, create .env from template, install git hook"
+	@echo ""
 	@echo "  Editor"
 	@echo "    editor-up      Start only the backend container for editing/linting"
 	@echo "    editor-down    Stop the backend container and remove compose resources"
-	@echo "    shell          Open a shell in the backend container"
+	@echo "    shell          Open a zsh shell in the backend container"
 	@echo ""
 	@echo "  Lifecycle"
-	@echo "    init           Pull postgres and build the backend dev image"
 	@echo "    up             Start full stack (postgres + backend) in the background"
 	@echo "    down           Stop the local backend stack and remove containers"
 	@echo "    logs           Follow backend + postgres logs"
 	@echo "    ci-down        Full cleanup for CI: stop containers and remove volumes + local images"
 	@echo ""
 	@echo "  Quality"
-	@echo "    lint           Run ruff check for app/ inside Docker"
-	@echo "    format         Run ruff format for app/ inside Docker"
-	@echo "    typecheck      Run mypy --strict for app/ inside Docker"
-	@echo "    test           Run pytest for app/ inside Docker"
+	@echo "    lint           Run ruff check (report only)"
+	@echo "    format         Run ruff format (apply)"
+	@echo "    fix            Run ruff check --fix + ruff format (apply all auto-fixes)"
+	@echo "    typecheck      Run mypy --strict"
+	@echo "    test           Run pytest"
 	@echo "    test-coverage  Run pytest with coverage XML/HTML output"
-	@echo "    detect-secrets Run detect-secrets inside Docker"
-	@echo "    pre-commit     Run pre-commit hooks inside Docker"
-	@echo "    check          Convenience alias: lint + typecheck + test (requires Docker)"
+	@echo "    detect-secrets Run detect-secrets scan"
+	@echo "    pre-commit     Run all pre-commit hooks"
+	@echo "    check          lint + typecheck + test-coverage"
 	@echo ""
 	@echo "  Compatibility aliases"
-	@echo "    build          Alias for init"
-	@echo "    run            Alias for up"
-	@echo "    run-dev        Alias for up"
-	@echo "    setup          Alias for init"
+	@echo "    build / run / run-dev / setup   Aliases for init / up / up / init"
 	@echo ""
 
 init:
-	BACKEND_GIT_DIR="$(GIT_DIR_HOST)" $(COMPOSE) pull postgres
-	BACKEND_GIT_DIR="$(GIT_DIR_HOST)" $(COMPOSE) build $(SERVICE)
+	@if [ ! -f .env ]; then cp .env.example .env && echo ">>> .env created from .env.example"; fi
+	$(COMPOSE) build $(SERVICE)
+	@printf '#!/bin/sh\nexec make pre-commit\n' > $(GIT_HOOKS_DIR)/pre-commit
+	@chmod +x $(GIT_HOOKS_DIR)/pre-commit
+	@echo ">>> git pre-commit hook installed (calls 'make pre-commit' on every commit)"
 
 editor-up:
-	BACKEND_GIT_DIR="$(GIT_DIR_HOST)" $(COMPOSE) up -d $(SERVICE)
+	$(COMPOSE) up -d $(SERVICE)
 
 editor-down:
-	BACKEND_GIT_DIR="$(GIT_DIR_HOST)" $(COMPOSE) down --remove-orphans
+	$(COMPOSE) down --remove-orphans
 
 ci-down:
-	BACKEND_GIT_DIR="$(GIT_DIR_HOST)" $(COMPOSE) down -v --rmi local --remove-orphans
+	$(COMPOSE) down -v --remove-orphans
+	# Remove the locally-built dev image explicitly.
+	# --rmi local skips images that have a custom `image:` field in compose,
+	# so we remove it by name. Public images (postgres:16-alpine, python:3.13-slim)
+	# are NOT removed — they remain cached on the Jenkins node for future builds.
+	docker rmi movie-finder-backend:local || true
 
 up:
-	BACKEND_GIT_DIR="$(GIT_DIR_HOST)" $(COMPOSE) up --build -d
+	$(COMPOSE) up -d
 
 down:
-	BACKEND_GIT_DIR="$(GIT_DIR_HOST)" $(COMPOSE) down --remove-orphans
+	$(COMPOSE) down --remove-orphans
 
 logs:
-	BACKEND_GIT_DIR="$(GIT_DIR_HOST)" $(COMPOSE) logs -f $(SERVICE) postgres
+	$(COMPOSE) logs -f $(SERVICE) postgres
 
 shell:
-	@if BACKEND_GIT_DIR="$(GIT_DIR_HOST)" $(COMPOSE) ps --services --status running | grep -qx "$(SERVICE)"; then \
-		BACKEND_GIT_DIR="$(GIT_DIR_HOST)" $(COMPOSE) exec $(SERVICE) sh; \
+	@if $(COMPOSE) ps --services --status running 2>/dev/null | grep -qx "$(SERVICE)"; then \
+		$(COMPOSE) exec $(SERVICE) zsh; \
 	else \
-		BACKEND_GIT_DIR="$(GIT_DIR_HOST)" $(COMPOSE) run --rm $(SERVICE) sh; \
+		$(COMPOSE) run --rm $(SERVICE) zsh; \
 	fi
 
 lint:
-	BACKEND_GIT_DIR="$(GIT_DIR_HOST)" $(COMPOSE) run --rm --no-deps $(SERVICE) ruff check $(APP_PATHS)
+	$(call exec_or_run,ruff check $(APP_PATHS))
 
 format:
-	BACKEND_GIT_DIR="$(GIT_DIR_HOST)" $(COMPOSE) run --rm --no-deps $(SERVICE) ruff format $(APP_PATHS)
+	$(call exec_or_run,ruff format $(APP_PATHS))
+
+fix:
+	$(call exec_or_run,ruff check --fix $(APP_PATHS))
+	$(call exec_or_run,ruff format $(APP_PATHS))
 
 typecheck:
-	BACKEND_GIT_DIR="$(GIT_DIR_HOST)" $(COMPOSE) run --rm --no-deps $(SERVICE) mypy app/src
+	$(call exec_or_run,mypy app/src)
 
 test:
-	BACKEND_GIT_DIR="$(GIT_DIR_HOST)" $(COMPOSE) run --rm -e DATABASE_URL="$(TEST_DATABASE_URL)" $(SERVICE) \
-		pytest app/tests/ --asyncio-mode=auto -v --tb=short
+	@if $(COMPOSE) ps --services --status running 2>/dev/null | grep -qx "$(SERVICE)"; then \
+		$(COMPOSE) exec -e DATABASE_URL="$(TEST_DATABASE_URL)" $(SERVICE) \
+			pytest app/tests/ --asyncio-mode=auto -v --tb=short; \
+	else \
+		$(COMPOSE) run --rm -e DATABASE_URL="$(TEST_DATABASE_URL)" $(SERVICE) \
+			pytest app/tests/ --asyncio-mode=auto -v --tb=short; \
+	fi
 
 test-coverage:
-	BACKEND_GIT_DIR="$(GIT_DIR_HOST)" $(COMPOSE) run --rm -e DATABASE_URL="$(TEST_DATABASE_URL)" $(SERVICE) \
-		pytest app/tests/ --asyncio-mode=auto -v --tb=short \
-		--cov=app \
-		--cov-report=term-missing \
-		--cov-report=xml:$(COVERAGE_XML) \
-		--cov-report=html:$(COVERAGE_HTML) \
-		--junitxml=$(JUNIT_XML)
+	@if $(COMPOSE) ps --services --status running 2>/dev/null | grep -qx "$(SERVICE)"; then \
+		$(COMPOSE) exec -e DATABASE_URL="$(TEST_DATABASE_URL)" $(SERVICE) \
+			pytest app/tests/ --asyncio-mode=auto -v --tb=short \
+			--cov=app \
+			--cov-report=term-missing \
+			--cov-report=xml:$(COVERAGE_XML) \
+			--cov-report=html:$(COVERAGE_HTML) \
+			--junitxml=$(JUNIT_XML); \
+	else \
+		$(COMPOSE) run --rm -e DATABASE_URL="$(TEST_DATABASE_URL)" $(SERVICE) \
+			pytest app/tests/ --asyncio-mode=auto -v --tb=short \
+			--cov=app \
+			--cov-report=term-missing \
+			--cov-report=xml:$(COVERAGE_XML) \
+			--cov-report=html:$(COVERAGE_HTML) \
+			--junitxml=$(JUNIT_XML); \
+	fi
 
 detect-secrets:
-	BACKEND_GIT_DIR="$(GIT_DIR_HOST)" $(COMPOSE) run --rm --no-deps $(SERVICE) detect-secrets scan --baseline .secrets.baseline # pragma: allowlist secret
+	$(call exec_or_run,detect-secrets scan --baseline .secrets.baseline) # pragma: allowlist secret
 
 pre-commit:
-	BACKEND_GIT_DIR="$(GIT_DIR_HOST)" $(COMPOSE) run --rm --no-deps \
-		$(SERVICE) pre-commit run --all-files
+	$(call exec_or_run,pre-commit run --all-files)
+
+check: lint typecheck test-coverage
 
 build: init
-
 run: up
-
 run-dev: up
-
 setup: init
-
-check: lint typecheck test
