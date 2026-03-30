@@ -128,19 +128,15 @@ If the backend root needs to reference those repos:
 
 ## Pre-commit hooks
 
+`backend/.pre-commit-config.yaml` covers `app/`; `chain/`, `imdbapi/`, `rag_ingestion/` each have their own.
+
+
 ```bash
 make pre-commit
 ```
 
-Hooks include:
-
-- file health checks
-- `detect-secrets`
-- `mypy --strict`
-- `ruff-check`
-- `ruff-format`
-
-Never `--no-verify`.
+Hooks: whitespace/YAML/safety checks, `detect-secrets`, `mypy --strict` (pydantic + fastapi deps), `ruff-check --fix`, `ruff-format`. **Never `--no-verify`.**
+False positive → `# pragma: allowlist secret` + `detect-secrets scan > .secrets.baseline`.
 
 ---
 
@@ -208,17 +204,38 @@ surfaces remain owned by their own issues.
 
 ## Cross-cutting change checklist
 
-1. GitHub issues
-   Parent issue in `aharbii/movie-finder`, linked child issue here only if this repo changes
-2. Scope boundary
-   If child repo work is deferred, leave an issue comment documenting the handoff
-3. Environment
-   `.env.example`, `Dockerfile`, `docker-compose.yml`, `Jenkinsfile`, and `deploy/provision.sh`
-   reviewed together when secret names change
-4. Verification
-   `make lint`, `make typecheck`, `make test`, and when relevant `make test-coverage`
-5. Docs
-   README / CONTRIBUTING / INTEGRATION / `app/README.md` updated when the developer contract changes
-6. VS Code
-   `.vscode/` plus `CLAUDE.md`, `GEMINI.md`, `AGENTS.md`, `.github/copilot-instructions.md`
-   updated together
+Full detail in `ai-context/issue-agent-briefing-template.md`.
+
+| # | Category | Key gate |
+|---|---|---|
+| 1 | **Issues** | Parent `aharbii/movie-finder` + child here only if this repo changes; templates inspected |
+| 2 | **Branch** | `feature/fix/chore/docs` in this repo + pointer-bump `chore/` in root `movie-finder` |
+| 3 | **ADR** | New external dep, auth model change, or API contract decision → ADR in `docs/` |
+| 4 | **Implementation** | DI / Repository / Middleware patterns; thin route handlers; `ruff`+`mypy --strict` pass; pre-commit pass |
+| 5 | **Tests** | `pytest --asyncio-mode=auto` passes; coverage doesn't regress |
+| 6 | **Env & secrets** | `.env.example` updated here + root + `frontend/` if API changed; new secrets → Key Vault + Jenkins |
+| 7 | **Docker** | `Dockerfile` + `docker-compose.yml` updated for dep/env/port changes |
+| 8 | **CI** | `Jenkinsfile` / `.github/workflows/` reviewed for new creds or stages |
+| 9 | **Diagrams** | `03-backend-architecture.puml`, `07-seq-authentication.puml`, `08-seq-chat-sse.puml`; `workspace.dsl` if C4 changed; commit to `docs/` first; **never `.mdj`** |
+| 9a | **Docs** | `docs/` pages updated; OpenAPI verified; `README.md` + `CHANGELOG.md` updated |
+
+### 10. Sibling submodules likely affected
+| Submodule | Why |
+|---|---|
+| `backend/chain/` | Invocation interface, SSE event shape, state changes |
+| `backend/app/` | Direct child — most route changes live here |
+| `backend/imdbapi/` | IMDb integration surface |
+| `frontend/` | API contract, SSE event fields, auth flow |
+| `infrastructure/` | New Azure resources, new env vars, new secrets |
+| `docs/` | API docs, DevOps setup, architecture |
+
+### 11. Submodule pointer bump
+```bash
+# in root movie-finder
+git add backend && git commit -m "chore(backend): bump to latest main"
+```
+
+### 12. Pull request
+- [ ] PR in `aharbii/movie-finder-backend` discloses the AI authoring tool + model
+- [ ] PR in `aharbii/movie-finder` (pointer bump)
+- [ ] Any AI-assisted review comment or approval discloses the review tool + model
