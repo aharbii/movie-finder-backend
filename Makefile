@@ -108,7 +108,12 @@ editor-down:
 	$(COMPOSE) down --remove-orphans
 
 ci-down:
-	$(COMPOSE) down -v --rmi local --remove-orphans
+	$(COMPOSE) down -v --remove-orphans
+	# Remove the locally-built dev image explicitly.
+	# --rmi local skips images that have a custom `image:` field in compose,
+	# so we remove it by name. Public images (postgres:16-alpine, python:3.13-slim)
+	# are NOT removed — they remain cached on the Jenkins node for future builds.
+	docker rmi movie-finder-backend:local || true
 
 up:
 	$(COMPOSE) up -d
