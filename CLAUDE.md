@@ -107,23 +107,15 @@ APP_SECRET_KEY, APP_ENV=development, APP_PORT=8000
 
 ## Pre-commit hooks
 
-`backend/.pre-commit-config.yaml` — install and run from the `backend/` workspace root.
-This config covers `app/` code; `chain/`, `imdbapi/`, and `rag_ingestion/` each have their own.
+`backend/.pre-commit-config.yaml` covers `app/`; `chain/`, `imdbapi/`, `rag_ingestion/` each have their own.
 
 ```bash
 uv run pre-commit install    # once per clone
 uv run pre-commit run --all-files
 ```
 
-| Hook | Notes |
-|---|---|
-| `trailing-whitespace`, `end-of-file-fixer`, `check-yaml`, `check-case-conflict`, `check-merge-conflict` | File health |
-| `check-added-large-files`, `check-illegal-windows-names`, `detect-private-key` | Safety |
-| `detect-secrets` | No API keys or tokens |
-| `mypy` (strict, Python 3.13, extra deps: `pydantic`, `pydantic-settings`, `fastapi`, excludes `tests/` and `conftest.py`) | Type checking |
-| `ruff-check --fix`, `ruff-format` | Linting and formatting |
-
-**Never `--no-verify`.** False-positive → `# pragma: allowlist secret` + `detect-secrets scan > .secrets.baseline`.
+Hooks: whitespace/YAML/safety checks, `detect-secrets`, `mypy --strict` (pydantic + fastapi deps), `ruff-check --fix`, `ruff-format`. **Never `--no-verify`.**
+False positive → `# pragma: allowlist secret` + `detect-secrets scan > .secrets.baseline`.
 
 ---
 
@@ -195,49 +187,20 @@ Conventional Commits: `feat(app): add rate limiting middleware`
 
 ## Cross-cutting change checklist
 
-### 1. GitHub issues
-- [ ] `aharbii/movie-finder` (parent)
-- [ ] `aharbii/movie-finder-backend` linked child issue only if this repo changes
-- [ ] Matching issue/PR templates and a recent example were inspected before filing or editing
+Full detail in `ai-context/issue-agent-briefing-template.md`.
 
-### 2. Branch
-- [ ] Branch in this repo + `chore/` in root `movie-finder` to bump pointer
-- [ ] New standalone issues branch from `main` unless stacking is explicitly requested
-
-### 3. ADR
-- [ ] New external dependency, auth model change, or API contract decision?
-  → `docs/architecture/decisions/ADR-NNN-title.md`
-
-### 4. Implementation and tests
-- [ ] Follows dependency injection, repository, and middleware patterns
-- [ ] Route handlers are thin — business logic is not inline
-- [ ] `ruff` + `mypy --strict` pass across the workspace
-- [ ] Pre-commit hooks pass
-- [ ] `pytest --asyncio-mode=auto` passes
-
-### 5. Environment and secrets
-- [ ] `.env.example` updated in: **this repo**, root `movie-finder`, `frontend/` if API config changed
-- [ ] New secrets flagged for Azure Key Vault, Jenkins, `docs/devops-setup.md`
-
-### 6. Docker
-- [ ] `Dockerfile` updated (new deps, env vars)
-- [ ] `docker-compose.yml` updated
-- [ ] Root `docker-compose.yml` if service port or env changed
-
-### 7. CI — Jenkins
-- [ ] `.github/workflows/*.yml` and/or `Jenkinsfile` reviewed — new credentials, permissions, or stages?
-
-### 8. Architecture diagrams (in `docs/` submodule)
-- [ ] **PlantUML** — `03-backend-architecture.puml`, auth sequences (`07`), SSE sequence (`08`)
-  **Never generate `.mdj`** — user syncs to StarUML
-- [ ] **Structurizr C4** — `workspace.dsl` if containers or relations changed
-- [ ] Commit to `aharbii/movie-finder-docs` first
-
-### 9. Documentation
-- [ ] `docs/` pages (API docs, auth flow, database schema)
-- [ ] OpenAPI schema: verify no unintended breaking changes at `/docs`
-- [ ] `README.md` and `CHANGELOG.md` updated
-- [ ] Contributor docs updated when CI, required checks, or merge policy change
+| # | Category | Key gate |
+|---|---|---|
+| 1 | **Issues** | Parent `aharbii/movie-finder` + child here only if this repo changes; templates inspected |
+| 2 | **Branch** | `feature/fix/chore/docs` in this repo + pointer-bump `chore/` in root `movie-finder` |
+| 3 | **ADR** | New external dep, auth model change, or API contract decision → ADR in `docs/` |
+| 4 | **Implementation** | DI / Repository / Middleware patterns; thin route handlers; `ruff`+`mypy --strict` pass; pre-commit pass |
+| 5 | **Tests** | `pytest --asyncio-mode=auto` passes; coverage doesn't regress |
+| 6 | **Env & secrets** | `.env.example` updated here + root + `frontend/` if API changed; new secrets → Key Vault + Jenkins |
+| 7 | **Docker** | `Dockerfile` + `docker-compose.yml` updated for dep/env/port changes |
+| 8 | **CI** | `Jenkinsfile` / `.github/workflows/` reviewed for new creds or stages |
+| 9 | **Diagrams** | `03-backend-architecture.puml`, `07-seq-authentication.puml`, `08-seq-chat-sse.puml`; `workspace.dsl` if C4 changed; commit to `docs/` first; **never `.mdj`** |
+| 9a | **Docs** | `docs/` pages updated; OpenAPI verified; `README.md` + `CHANGELOG.md` updated |
 
 ### 10. Sibling submodules likely affected
 | Submodule | Why |
