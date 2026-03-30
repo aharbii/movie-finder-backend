@@ -1,3 +1,12 @@
+# =============================================================================
+# movie-finder-backend — pre-commit configuration
+#
+# Standardized repository tooling:
+# - Common hooks for file health and secrets
+# - Specialized linters (mypy, ruff) use mirrored repositories
+# - The primary Docker-only contract remains via Makefile targets
+# =============================================================================
+
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
@@ -5,10 +14,15 @@ repos:
       - id: trailing-whitespace
       - id: end-of-file-fixer
       - id: check-yaml
+      - id: check-toml
+      - id: check-json
+        exclude: ^\.vscode/  # VSCode config files use JSONC (comments allowed)
+      - id: check-ast
       - id: check-added-large-files
       - id: check-case-conflict
       - id: check-illegal-windows-names
       - id: check-merge-conflict
+      - id: debug-statements
       - id: detect-private-key
 
   - repo: https://github.com/Yelp/detect-secrets
@@ -32,7 +46,6 @@ repos:
           - --warn-return-any
           - --warn-unused-ignores
           - --show-error-codes
-        exclude: (^tests/|/tests/|conftest\.py$)
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.14.13

@@ -3,11 +3,18 @@
 //
 // Stages:
 //   1. Checkout Submodules
-//   2. Lint (parallel)       — chain, imdbapi, app
-//   3. Test (parallel)       — chain, imdbapi, app  (rag_ingestion excluded: needs real API keys)
-//   4. Build App Image       — main branch + v* tags + DEPLOY_STAGING=true
-//   5. Deploy to Staging     — main branch (auto) or DEPLOY_STAGING=true
-//   6. Deploy to Production  — v* tags only, after manual approval gate
+//   2. Lint + Typecheck — backend app
+//   3. Test — backend app (PostgreSQL via docker-compose)
+//   4. Build App Image
+//   5. Deploy to Staging
+//   6. Deploy to Production
+//
+// Iteration boundary:
+//   This pipeline currently validates the backend-owned app slice only. The
+//   child repo Docker/task rollouts are tracked independently in:
+//     - movie-finder-chain#9
+//     - imdbapi-client#3
+//     - movie-finder-rag#13
 //
 // Triggers (configure in Jenkins job or via GitHub Branch Source plugin):
 //   • Every PR to main
@@ -27,18 +34,13 @@
 //   Backend-specific:
 //   azure-tenant-id    Secret Text      Azure Active Directory tenant ID
 //   azure-sub-id       Secret Text      Azure subscription ID
-//   aca-rg             Secret Text      Container Apps resource group name
+//   aca-staging-rg     Secret Text      Staging Container App resource group
 //   aca-staging-name   Secret Text      Staging Container App name
+//   aca-prod-rg        Secret Text      Production Container App resource group
 //   aca-prod-name      Secret Text      Production Container App name
 //
 // Jenkins plugins required:
-//   GitHub, Docker, JUnit, Cobertura, Credentials Binding, Git
-//   Note: uses "docker run" in steps (not Docker Pipeline agent) so that
-//   the Docker Pipeline plugin is NOT required.
-//
-// Jenkins agent labels required:
-//   (none)  — build/test stages use "agent any" (any available executor)
-//   deploy  — agent with Azure CLI (az) installed (for deploy stages)
+//   GitHub, Docker, JUnit, Credentials Binding, Git
 // =============================================================================
 
 pipeline {
@@ -60,7 +62,6 @@ pipeline {
 
     environment {
         SERVICE_NAME = 'movie-finder-backend'
-        UV_IMAGE     = 'ghcr.io/astral-sh/uv:python3.13-bookworm-slim'
     }
 
     stages {
@@ -69,8 +70,6 @@ pipeline {
         stage('Checkout Submodules') {
             agent any
             steps {
-                // Forward the SSH key so git can clone submodules over SSH.
-                // Uses withCredentials + ssh-agent (no SSH Agent plugin required).
                 withCredentials([sshUserPrivateKey(
                     credentialsId: 'github-ssh-key',
                     keyFileVariable: 'SSH_KEY'
@@ -82,196 +81,77 @@ pipeline {
                         ssh-agent -k
                     '''
                 }
-                // Stash the complete workspace (main repo + submodules) so that
-                // parallel stages running in separate @2/@3 workspaces can
-                // unstash and get the full source tree.
-                stash name: 'source', excludes: '.git,**/.git,**/.venv'
+                // Stash the complete workspace so later stages can run on any
+                // executor with the full repo + submodule checkout.
+                stash name: 'source', excludes: '.git,**/.git,**/.venv,**/htmlcov,**/*.xml'
             }
         }
 
         // ------------------------------------------------------------------ //
-        stage('Lint') {
-            parallel {
-
-                stage('Lint — chain') {
-                    agent any
-                    options { skipDefaultCheckout() }
-                    steps {
-                        unstash 'source'
-                        sh """
-                            docker run --rm \
-                                -v "\$(pwd)":/workspace \
-                                -w /workspace \
-                                ${UV_IMAGE} \
-                                sh -c 'uv sync --frozen --group lint && \
-                                       uv run ruff check chain/src/ chain/tests/ && \
-                                       uv run ruff format --check chain/src/ chain/tests/ && \
-                                       uv run mypy chain/src/'
-                        """
-                    }
+        stage('Lint + Typecheck — backend app') {
+            agent any
+            options { skipDefaultCheckout() }
+            steps {
+                unstash 'source'
+                sh '''
+                    set -e
+                    export COMPOSE_PROJECT_NAME="movie-finder-backend-ci-${BUILD_NUMBER}"
+                    make init
+                    make lint
+                    make typecheck
+                '''
+            }
+            post {
+                always {
+                    sh '''
+                        export COMPOSE_PROJECT_NAME="movie-finder-backend-ci-${BUILD_NUMBER}"
+                        make ci-down || true
+                    '''
                 }
-
-                stage('Lint — imdbapi') {
-                    agent any
-                    options { skipDefaultCheckout() }
-                    steps {
-                        unstash 'source'
-                        sh """
-                            docker run --rm \
-                                -v "\$(pwd)":/workspace \
-                                -w /workspace \
-                                ${UV_IMAGE} \
-                                sh -c 'uv sync --frozen --group lint && \
-                                       uv run ruff check imdbapi/src/ imdbapi/tests/ && \
-                                       uv run ruff format --check imdbapi/src/ imdbapi/tests/ && \
-                                       uv run mypy imdbapi/src/'
-                        """
-                    }
-                }
-
-                stage('Lint — app') {
-                    agent any
-                    options { skipDefaultCheckout() }
-                    steps {
-                        unstash 'source'
-                        sh """
-                            docker run --rm \
-                                -v "\$(pwd)":/workspace \
-                                -w /workspace \
-                                ${UV_IMAGE} \
-                                sh -c 'uv sync --frozen --group lint && \
-                                       uv run ruff check app/src/ app/tests/ && \
-                                       uv run ruff format --check app/src/ app/tests/ && \
-                                       uv run mypy app/src/'
-                        """
-                    }
-                }
-
             }
         }
 
         // ------------------------------------------------------------------ //
-        stage('Test') {
-            parallel {
-
-                stage('Test — chain') {
-                    agent any
-                    options { skipDefaultCheckout() }
-                    steps {
-                        unstash 'source'
-                        // ChainConfig requires these fields to instantiate (even in mocked tests).
-                        // Values are dummy — no real API calls are made; all external clients
-                        // are mocked in chain/tests/conftest.py.
-                        sh """
-                            docker run --rm \
-                                -v "\$(pwd)":/workspace \
-                                -w /workspace \
-                                -e QDRANT_ENDPOINT=https://test.qdrant.io \
-                                -e QDRANT_API_KEY=test-key \
-                                -e OPENAI_API_KEY=sk-test-openai \
-                                -e ANTHROPIC_API_KEY=sk-ant-test \
-                                ${UV_IMAGE} \
-                                sh -c 'uv sync --frozen --group test && \
-                                       uv run pytest chain/tests/ \
-                                           --cov=chain/src \
-                                           --cov-report=xml:chain-coverage.xml \
-                                           --junitxml=chain-test-results.xml \
-                                           -v --tb=short'
-                        """
-                    }
-                    post {
-                        always {
-                            junit allowEmptyResults: true, testResults: 'chain-test-results.xml'
-                            archiveArtifacts artifacts: 'chain-coverage.xml', allowEmptyArchive: true
-                        }
-                    }
+        stage('Test — backend app') {
+            agent any
+            options { skipDefaultCheckout() }
+            environment {
+                APP_SECRET_KEY = 'ci-test-only-not-a-real-secret' // pragma: allowlist secret
+                OPENAI_API_KEY = 'sk-test-openai' // pragma: allowlist secret
+                ANTHROPIC_API_KEY = 'sk-ant-test' // pragma: allowlist secret
+                QDRANT_URL = 'https://test.qdrant.io' // pragma: allowlist secret
+                QDRANT_API_KEY_RO = 'test-key' // pragma: allowlist secret
+                QDRANT_COLLECTION_NAME = 'movies'
+            }
+            steps {
+                unstash 'source'
+                sh '''
+                    set -e
+                    export COMPOSE_PROJECT_NAME="movie-finder-backend-ci-${BUILD_NUMBER}"
+                    # Compose publishes host ports even for dependency services, so
+                    # keep them unique per build to avoid collisions on shared agents.
+                    export POSTGRES_HOST_PORT="$((54320 + BUILD_NUMBER % 1000))"
+                    export BACKEND_HOST_PORT="$((55320 + BUILD_NUMBER % 1000))"
+                    export TEST_DATABASE_URL="postgresql://movie_finder:devpassword@postgres:5432/movie_finder_test" # pragma: allowlist secret
+                    make init
+                    docker compose run --rm \
+                        -e DATABASE_URL="$TEST_DATABASE_URL" \
+                        backend pytest app/tests/ \
+                            --cov=app \
+                            --cov-report=xml:app-coverage.xml \
+                            --junitxml=app-test-results.xml \
+                            -v --tb=short
+                '''
+            }
+            post {
+                always {
+                    junit allowEmptyResults: true, testResults: 'app-test-results.xml'
+                    archiveArtifacts artifacts: 'app-coverage.xml', allowEmptyArchive: true
+                    sh '''
+                        export COMPOSE_PROJECT_NAME="movie-finder-backend-ci-${BUILD_NUMBER}"
+                        make ci-down || true
+                    '''
                 }
-
-                stage('Test — imdbapi') {
-                    agent any
-                    options { skipDefaultCheckout() }
-                    steps {
-                        unstash 'source'
-                        sh """
-                            docker run --rm \
-                                -v "\$(pwd)":/workspace \
-                                -w /workspace \
-                                ${UV_IMAGE} \
-                                sh -c 'uv sync --frozen --group test && \
-                                       uv run pytest imdbapi/tests/ \
-                                           --cov=imdbapi/src \
-                                           --cov-report=xml:imdbapi-coverage.xml \
-                                           --junitxml=imdbapi-test-results.xml \
-                                           -v --tb=short'
-                        """
-                    }
-                    post {
-                        always {
-                            junit allowEmptyResults: true, testResults: 'imdbapi-test-results.xml'
-                            archiveArtifacts artifacts: 'imdbapi-coverage.xml', allowEmptyArchive: true
-                        }
-                    }
-                }
-
-                stage('Test — app') {
-                    // Run on the Jenkins host (not inside a UV container) so we can
-                    // manage Docker containers directly for the PostgreSQL sidecar.
-                    agent any
-                    options { skipDefaultCheckout() }
-                    environment {
-                        APP_SECRET_KEY = 'ci-test-only-not-a-real-secret' // pragma: allowlist secret
-                        DATABASE_URL   = 'postgresql://postgres:postgres@ci-app-postgres:5432/movie_finder_test' // pragma: allowlist secret
-                        CI_NET         = "ci-test-net-${env.BUILD_NUMBER}"
-                    }
-                    steps {
-                        unstash 'source'
-                        // Create an isolated bridge network so the UV container can
-                        // reach the postgres container by hostname without conflicting
-                        // with any pre-existing service on the host's port 5432.
-                        sh 'docker network create "$CI_NET"'
-                        sh '''
-                            docker rm -f ci-app-postgres 2>/dev/null || true
-                            docker run -d --name ci-app-postgres \
-                                --network "$CI_NET" \
-                                -e POSTGRES_PASSWORD=postgres \
-                                -e POSTGRES_DB=movie_finder_test \
-                                postgres:16-alpine
-                            for i in $(seq 1 30); do
-                                docker exec ci-app-postgres \
-                                    pg_isready -U postgres -d movie_finder_test \
-                                    && break || sleep 1
-                            done
-                        '''
-                        sh """
-                            docker run --rm \
-                                --network "\$CI_NET" \
-                                -e APP_SECRET_KEY="\$APP_SECRET_KEY" \
-                                -e DATABASE_URL="\$DATABASE_URL" \
-                                -v "\$(pwd)":/workspace \
-                                -w /workspace \
-                                ${UV_IMAGE} \
-                                sh -c 'uv sync --frozen --group test && \
-                                       uv run pytest app/tests/ \
-                                           --cov=app/src \
-                                           --cov-report=xml:app-coverage.xml \
-                                           --junitxml=app-test-results.xml \
-                                           -v --tb=short'
-                        """
-                    }
-                    post {
-                        always {
-                            junit allowEmptyResults: true, testResults: 'app-test-results.xml'
-                            archiveArtifacts artifacts: 'app-coverage.xml', allowEmptyArchive: true
-                            sh 'docker rm -f ci-app-postgres || true'
-                            sh 'docker network rm "$CI_NET" || true'
-                        }
-                    }
-                }
-
-                // Test — rag_ingestion is intentionally excluded from CI.
-                // Its tests make real OpenAI embedding API calls (no mock available)
-                // and would incur cost on every pipeline run.
-
             }
         }
 
@@ -284,24 +164,18 @@ pipeline {
                     expression { params.DEPLOY_STAGING == true }
                 }
             }
-            // Use the host Docker daemon directly — no DinD needed.
             agent any
             environment {
                 ACR_SERVER = credentials('acr-login-server')
-                // acr-credentials is a Username+Password credential (shared with frontend):
-                //   ACR_CREDENTIALS_USR = service principal App ID
-                //   ACR_CREDENTIALS_PSW = service principal client secret
                 ACR_CREDENTIALS = credentials('acr-credentials')
             }
             steps {
                 script {
-                    // Derive image tag: git tag name for releases, short SHA otherwise
                     def tag = env.GIT_TAG_NAME ?: env.GIT_COMMIT.take(8)
                     env.BUILD_TAG  = tag
                     env.FULL_IMAGE = "${env.ACR_SERVER}/${env.SERVICE_NAME}:${tag}"
                 }
                 sh 'echo "$ACR_CREDENTIALS_PSW" | docker login "$ACR_SERVER" -u "$ACR_CREDENTIALS_USR" --password-stdin'
-                // Pull :latest first so BuildKit can reuse unchanged layers (registry cache)
                 sh "docker pull ${env.ACR_SERVER}/${env.SERVICE_NAME}:latest || true"
                 sh """
                     docker build \
@@ -311,7 +185,6 @@ pipeline {
                 """
                 sh "docker push ${env.FULL_IMAGE}"
                 script {
-                    // :latest is a convenience tag — never used directly by the deploy stages
                     if (env.BRANCH_NAME == 'main') {
                         def latestImage = "${env.ACR_SERVER}/${env.SERVICE_NAME}:latest"
                         sh "docker tag ${env.FULL_IMAGE} ${latestImage}"
@@ -336,8 +209,6 @@ pipeline {
             }
             agent any
             environment {
-                // azure-sp is shared with the frontend (Username+Password):
-                //   AZURE_SP_USR = SP App ID, AZURE_SP_PSW = client secret
                 AZURE_SP        = credentials('azure-sp')
                 AZURE_TENANT_ID = credentials('azure-tenant-id')
                 AZURE_SUB_ID    = credentials('azure-sub-id')
@@ -373,8 +244,6 @@ pipeline {
 
         // ------------------------------------------------------------------ //
         stage('Deploy to Production') {
-            // Only triggered by a versioned git tag (e.g. v1.2.3).
-            // Requires a human to click "Deploy" in the Jenkins UI.
             when { buildingTag() }
             agent any
             environment {
@@ -386,7 +255,6 @@ pipeline {
                 ACR_SERVER      = credentials('acr-login-server')
             }
             steps {
-                // Manual approval gate — times out after 30 min if no response
                 timeout(time: 30, unit: 'MINUTES') {
                     input message: "Deploy ${env.GIT_TAG_NAME} to PRODUCTION?",
                           ok: 'Deploy',
@@ -421,8 +289,6 @@ pipeline {
 
     post {
         always {
-            // cleanWs requires a node context. With agent none at pipeline level,
-            // we must allocate one explicitly.
             node('') {
                 cleanWs()
             }
@@ -437,7 +303,7 @@ pipeline {
                 } else if (env.BRANCH_NAME == 'main') {
                     echo "Build ${env.BUILD_TAG} deployed to staging."
                 } else {
-                    echo "CI passed for ${env.BRANCH_NAME}."
+                    echo "Backend CI passed for ${env.BRANCH_NAME}."
                 }
             }
         }

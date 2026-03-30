@@ -6,7 +6,7 @@ Design:
   between tests for isolation).  Default: postgresql://postgres:postgres@localhost:5432/movie_finder_test # pragma: allowlist secret
 - LangGraph is fully mocked; no chain or LLM configuration is needed.
 - FastAPI's lifespan is replaced with a no-op so compile_graph() is never
-  called (avoids requiring QDRANT_ENDPOINT / ANTHROPIC_API_KEY in tests).
+  called (avoids requiring QDRANT_URL / ANTHROPIC_API_KEY in tests).
 - Dependencies are injected via FastAPI's dependency_overrides mechanism.
 """
 

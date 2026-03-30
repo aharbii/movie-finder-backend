@@ -7,27 +7,28 @@ GitHub repo: `aharbii/movie-finder-backend` · Parent repo: `aharbii/movie-finde
 
 ## What this submodule does
 
-FastAPI backend — HTTP/SSE API layer and `uv` workspace root for all Python packages.
+FastAPI backend — HTTP/SSE API layer and backend integration root for the Python
+packages consumed by the app.
 
 - **Auth:** JWT (python-jose, bcrypt) — 30-min access token, 7-day refresh token
 - **Sessions:** PostgreSQL 16 via asyncpg connection pool
 - **Streaming:** SSE (`StreamingResponse`) — proxies LangGraph pipeline events to the frontend
 - **uv workspace:** `app/`, `chain/`, `imdbapi/` are members; `rag_ingestion/` is not
-- **Pre-commit:** `backend/.pre-commit-config.yaml` — applies to all workspace members
-- **Makefile:** `backend/Makefile` — common dev tasks (lint, test, build, run)
+- **Makefile:** `backend/Makefile` — Docker-only dev contract for the backend app stack
+- **Pre-commit:** runs inside Docker via `make pre-commit`
 
 ### Key source layout
 
-```
+```text
 app/src/          FastAPI application (routes, middleware, deps)
-chain/src/        LangGraph pipeline
-imdbapi/src/      Async IMDb REST client
-rag_ingestion/    Standalone ingestion script (not workspace member)
+chain/src/        LangGraph pipeline imported by the app
+imdbapi/src/      Async IMDb REST client imported by chain
+rag_ingestion/    Standalone child repo (not part of the backend dev image)
 pyproject.toml    uv workspace root + shared tool config (ruff, mypy, pytest)
-.pre-commit-config.yaml
+docker-compose.yml
+Dockerfile
 Makefile
 Jenkinsfile
-Dockerfile
 ```
 
 ---
@@ -38,14 +39,14 @@ Dockerfile
 
 | Path | GitHub repo | Role |
 |---|---|---|
-| `.` (root) | `aharbii/movie-finder` | Parent — all cross-repo issues |
+| `.` (root) | `aharbii/movie-finder` | Parent — cross-repo planning and issue tracking |
 | `backend/` | `aharbii/movie-finder-backend` | **← you are here** |
 | `backend/app/` | (nested) | FastAPI application layer |
 | `backend/chain/` | `aharbii/movie-finder-chain` | LangGraph AI pipeline |
 | `backend/imdbapi/` | `aharbii/imdbapi-client` | Async IMDb REST client |
 | `backend/rag_ingestion/` | `aharbii/movie-finder-rag` | Offline embedding ingestion |
-| `frontend/` | `aharbii/movie-finder-frontend` | Angular 21 SPA |
-| `docs/` | `aharbii/movie-finder-docs` | MkDocs documentation |
+| `frontend/` | `aharbii/movie-finder-frontend` | Angular SPA |
+| `docs/` | `aharbii/movie-finder-docs` | Architecture + docs |
 | `infrastructure/` | `aharbii/movie-finder-infrastructure` | IaC / Azure provisioning |
 
 ### Technology stack
@@ -55,26 +56,48 @@ Dockerfile
 | Language | Python 3.13 |
 | API | FastAPI 0.115+, `StreamingResponse` (SSE) |
 | Auth | JWT (python-jose), bcrypt, PostgreSQL session store |
-| Database | PostgreSQL 16, asyncpg (raw DDL — no Alembic yet, see #3) |
+| Database | PostgreSQL 16, asyncpg |
+| Vector store | Qdrant Cloud (external only) |
 | Package manager | `uv` workspace root |
-| Linting | `ruff` (line-length 100, rules: E/F/I/N/UP/B/C4/SIM) |
-| Type checking | `mypy --strict` (Python 3.13) |
-| Tests | `pytest --asyncio-mode=auto` |
-| CI | Jenkins Multibranch → Azure Container Registry → Azure Container Apps |
+| Local dev | Docker Compose + attached-container VS Code workflow |
+| Linting | `ruff` |
+| Type checking | `mypy --strict` |
+| Tests | `pytest --asyncio-mode=auto`, `pytest-cov` |
+| CI/CD | Jenkins → Azure Container Registry → Azure Container Apps |
 
 ### Environment variables (`.env.example`)
 
-```
+```text
 DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD, DATABASE_URL
-QDRANT_ENDPOINT, QDRANT_API_KEY, QDRANT_COLLECTION
-EMBEDDING_MODEL, EMBEDDING_DIMENSION
+QDRANT_URL, QDRANT_API_KEY_RO, QDRANT_COLLECTION_NAME
+QDRANT_API_KEY_RW, KAGGLE_API_TOKEN   # documented for cross-repo alignment only
 ANTHROPIC_API_KEY, CLASSIFIER_MODEL, REASONING_MODEL
 OPENAI_API_KEY
-RAG_TOP_K=8, MAX_REFINEMENTS=3, IMDB_SEARCH_LIMIT=3, CONFIDENCE_THRESHOLD=0.3
-KAGGLE_USERNAME, KAGGLE_KEY, VECTOR_STORE=qdrant
-LANGSMITH_TRACING=false, LANGSMITH_ENDPOINT, LANGSMITH_API_KEY, LANGSMITH_PROJECT
-APP_SECRET_KEY, APP_ENV=development, APP_PORT=8000
+RAG_TOP_K, MAX_REFINEMENTS, IMDB_SEARCH_LIMIT, CONFIDENCE_THRESHOLD
+LANGSMITH_TRACING, LANGSMITH_ENDPOINT, LANGSMITH_API_KEY, LANGSMITH_PROJECT
+APP_SECRET_KEY, APP_ENV, APP_PORT, POSTGRES_HOST_PORT, BACKEND_HOST_PORT
 ```
+
+Legacy Qdrant names may still appear inside `docker-compose.yml` or Jenkins only
+as a temporary compatibility bridge until `movie-finder-chain#9`.
+
+---
+
+## Current iteration boundary
+
+This repo now standardizes the **backend app Docker contract** from the root.
+
+Do not use this iteration to take over the standalone child repo flows for:
+
+- `movie-finder-chain#9`
+- `imdbapi-client#3`
+- `movie-finder-rag#13`
+
+If the backend root needs to reference those repos:
+
+1. keep the root change narrowly backend-owned
+2. document the handoff or dependency as an issue comment
+3. leave the child repo implementation to its own issue
 
 ---
 
@@ -82,25 +105,23 @@ APP_SECRET_KEY, APP_ENV=development, APP_PORT=8000
 
 | Pattern | Where | Rule |
 |---|---|---|
-| **Dependency injection** | `app/` routes | Use FastAPI `Depends()` for db pool, current user, config, and chain client. Never instantiate shared resources inside route handlers. |
-| **Repository** | Database layer | Data access (SELECT, INSERT, UPDATE) lives in repository classes. No raw SQL in route handlers or services. |
-| **Configuration object** | `config.py` / Pydantic `BaseSettings` | All env vars loaded once at startup. Never `os.getenv()` inside business logic. |
-| **Middleware chain** | FastAPI middleware | Cross-cutting concerns (CORS — see #9, rate limiting — see #4, auth) are middleware, not per-route logic. |
-| **SSE as a stream** | Streaming route | The SSE endpoint is a thin proxy — it invokes the chain and forwards events. Business logic stays in `chain/`. |
-
-**Open issues that affect patterns:** #2 (MemorySaver non-persistent), #3 (no Alembic), #4 (no rate limiting), #9 (no CORS), #12 (`UserInDB` exposes `hashed_password`). Reference these in any related change.
+| **Dependency injection** | `app/` routes | Use FastAPI `Depends()` for db pool, current user, config, and graph. Never instantiate shared resources inside route handlers. |
+| **Repository** | Database layer | Data access lives in repository classes. No raw SQL in route handlers. |
+| **Configuration object** | `config.py` / Pydantic `BaseSettings` | Load env vars once. Never scatter `os.getenv()` through business logic. |
+| **Middleware chain** | FastAPI middleware | Cross-cutting concerns belong in middleware, not repeated per route. |
+| **SSE as a stream** | Streaming route | The SSE endpoint is a thin proxy. Business logic stays in `chain/`. |
 
 ---
 
 ## Coding standards
 
-- `mypy --strict` must pass across the entire workspace
+- `mypy --strict` must pass
 - No `type: ignore` without an explanatory comment
-- No bare `except:` — catch specific exceptions; use `HTTPException` for API errors
-- Docstrings on all public functions, classes, and route handlers (Google style)
-- No `print()` — use `logging`; no debug prints left in production code
-- Async all the way — never call blocking I/O in an async context (no `time.sleep`, no sync DB calls)
-- Route handlers are thin — validation in Pydantic schemas, business logic in services, data access in repositories
+- No bare `except:`
+- Docstrings on public functions, classes, and route handlers (Google style)
+- No `print()` in production code
+- Async all the way
+- Route handlers stay thin
 - Line length: 100 (`ruff`)
 
 ---
@@ -109,9 +130,9 @@ APP_SECRET_KEY, APP_ENV=development, APP_PORT=8000
 
 `backend/.pre-commit-config.yaml` covers `app/`; `chain/`, `imdbapi/`, `rag_ingestion/` each have their own.
 
+
 ```bash
-uv run pre-commit install    # once per clone
-uv run pre-commit run --all-files
+make pre-commit
 ```
 
 Hooks: whitespace/YAML/safety checks, `detect-secrets`, `mypy --strict` (pydantic + fastapi deps), `ruff-check --fix`, `ruff-format`. **Never `--no-verify`.**
@@ -122,26 +143,43 @@ False positive → `# pragma: allowlist secret` + `detect-secrets scan > .secret
 ## Common Makefile targets
 
 ```bash
-make lint       # ruff + mypy
-make test       # pytest --asyncio-mode=auto
-make build      # docker build
-make run        # docker compose up
+make init
+make up
+make down
+make ci-down
+make logs
+make shell
+make editor-up
+make editor-down
+make lint
+make format
+make typecheck
+make test
+make test-coverage
+make pre-commit
 ```
+
+All supported root-level developer workflows execute through Docker Compose.
 
 ---
 
-## VSCode setup
+## VS Code setup
 
-`backend/.vscode/` covers **all backend sub-packages** — opening `backend/` as a workspace
-gives you full lint, test, debug, and format capabilities for app/, chain/, imdbapi/, and rag_ingestion/:
+`backend/.vscode/` now separates host-run tasks from attached-container Python
+tooling:
 
-- `settings.json` — Python interpreter (`backend/.venv`), Ruff format-on-save, mypy strict, pytest
-- `extensions.json` — Python, debugpy, Ruff, mypy, TOML, Docker, GitLens
-- `launch.json` — FastAPI dev server · chain chat.py · rag pipeline · pytest all/current/rag
-- `tasks.json` — per-package lint/test + aggregates (`lint: all`, `test: all`) + pre-commit per package
+- `tasks.json` — host tasks that call `make <target>`
+- `launch.json` — backend app + backend app tests inside the attached container
+- `settings.json` — interpreter `/opt/venv/bin/python`, pytest discovery for `app/tests/`,
+  extraPaths for `app/src`, `chain/src`, `imdbapi/src`
+- `extensions.json` — Remote Containers, Pylance, Ruff, Docker, Makefile, Coverage Gutters
 
-**Create the interpreter first:** `uv sync --all-packages` from `backend/` → creates `.venv/`
-**rag_ingestion uses its own venv:** run `uv sync` from `backend/rag_ingestion/` separately.
+**Workflow:** run `make editor-up` (or `make up`), then attach VS Code to the running `backend`
+service container.
+
+**Scope note:** code navigation includes `chain/` and `imdbapi/` because the
+backend app imports them directly, but the child repos' standalone task/debug
+surfaces remain owned by their own issues.
 
 ---
 
@@ -161,27 +199,6 @@ gives you full lint, test, debug, and format capabilities for app/, chain/, imdb
   requested.
 - PR descriptions must disclose the AI authoring tool + model. Any AI-assisted review comment or
   approval must also disclose the review tool + model.
-
----
-
-## Session start protocol
-
-1. `gh issue list --repo aharbii/movie-finder --state open`
-2. Inspect `.github/ISSUE_TEMPLATE/*.yml`, `.github/PULL_REQUEST_TEMPLATE.md`, and a recent
-   example of the same type
-3. Create the parent issue in `aharbii/movie-finder`, then the linked child issue in
-   `aharbii/movie-finder-backend` only if this repo will actually change
-4. Create a branch from `main` and work through the checklist below
-
----
-
-## Branching and commits
-
-```
-feature/<kebab>  fix/<kebab>  chore/<kebab>  docs/<kebab>  hotfix/<kebab>
-```
-
-Conventional Commits: `feat(app): add rate limiting middleware`
 
 ---
 

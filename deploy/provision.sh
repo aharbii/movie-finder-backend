@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # =============================================================================
-# movie-finder — Azure infrastructure provisioning script
+# movie-finder-backend — Azure infrastructure provisioning script
 #
-# Run this ONCE per environment to create all Azure resources. After it
-# completes, Jenkins handles every subsequent deployment via az containerapp
-# update (no need to re-run this script on each release).
+# Run this ONCE per environment to create the Azure resources and Key Vault
+# secrets required by the backend app container. After it completes, Jenkins
+# handles image build + deploy updates for subsequent releases.
 #
 # Usage:
 #   ./deploy/provision.sh staging
@@ -15,15 +15,22 @@
 #   • Contributor or Owner role on the target subscription
 #   • The following env vars set (or the script will prompt for them):
 #       ANTHROPIC_API_KEY   OPENAI_API_KEY
-#       QDRANT_ENDPOINT     QDRANT_API_KEY
+#       QDRANT_URL          QDRANT_API_KEY_RO
+#       QDRANT_COLLECTION_NAME
 #       APP_SECRET_KEY      PG_ADMIN_PASSWORD
 #
 # What this script creates (11 steps):
 #   Resource provider registration, Resource Group, Container Registry,
-#   Key Vault (6 secrets), Azure Database for PostgreSQL Flexible Server,
+#   Key Vault (backend app secret contract), Azure Database for PostgreSQL
+#   Flexible Server,
 #   Log Analytics Workspace, Container Apps Environment,
 #   User-Assigned Managed Identity (AcrPull + Key Vault),
 #   Container App (first deploy), Service Principal for Jenkins CI/CD.
+#
+# Iteration boundary:
+#   This script provisions the backend-owned secret contract only. The child
+#   repo rollouts for `movie-finder-chain`, `imdbapi-client`, and
+#   `movie-finder-rag` keep ownership of their repo-local CI/runtime additions.
 #
 # Note on the IMDb API:
 #   imdbapi.dev is a public API that requires no authentication.
@@ -50,7 +57,7 @@ fi
 
 echo ""
 echo "============================================="
-echo " Provisioning: movie-finder ($ENV)"
+echo " Provisioning: movie-finder-backend ($ENV)"
 echo "============================================="
 echo ""
 
@@ -106,8 +113,9 @@ get_secret() {
 
 ANTHROPIC_API_KEY="$(get_secret ANTHROPIC_API_KEY 'ANTHROPIC_API_KEY')"
 OPENAI_API_KEY="$(get_secret OPENAI_API_KEY 'OPENAI_API_KEY')"
-QDRANT_ENDPOINT="$(get_secret QDRANT_ENDPOINT 'QDRANT_ENDPOINT')"
-QDRANT_API_KEY="$(get_secret QDRANT_API_KEY 'QDRANT_API_KEY')"
+QDRANT_URL="$(get_secret QDRANT_URL 'QDRANT_URL')"
+QDRANT_API_KEY_RO="$(get_secret QDRANT_API_KEY_RO 'QDRANT_API_KEY_RO')"
+QDRANT_COLLECTION_NAME="$(get_secret QDRANT_COLLECTION_NAME 'QDRANT_COLLECTION_NAME')"
 APP_SECRET_KEY="$(get_secret APP_SECRET_KEY 'APP_SECRET_KEY (JWT signing secret)')"
 PG_ADMIN_PASSWORD="$(get_secret PG_ADMIN_PASSWORD 'PostgreSQL admin password (min 8 chars, must contain upper+lower+digit+symbol)')"
 
@@ -174,7 +182,7 @@ fi
 echo "    ✓ $ACR_SERVER"
 
 # --------------------------------------------------------------------------- #
-# 5. Key Vault  (DATABASE_URL stored after PostgreSQL is provisioned below)
+# 5. Key Vault  (`postgres-url` stored after PostgreSQL is provisioned below)
 # --------------------------------------------------------------------------- #
 
 echo ">>> [4/11] Creating Key Vault..."
@@ -205,12 +213,13 @@ echo "    Waiting 30 s for RBAC propagation..."
 sleep 30
 
 echo "    Storing secrets..."
-az keyvault secret set --vault-name "$KV_NAME" --name "APP-SECRET-KEY"    --value "$APP_SECRET_KEY"    --output none
-az keyvault secret set --vault-name "$KV_NAME" --name "ANTHROPIC-API-KEY" --value "$ANTHROPIC_API_KEY" --output none
-az keyvault secret set --vault-name "$KV_NAME" --name "OPENAI-API-KEY"    --value "$OPENAI_API_KEY"    --output none
-az keyvault secret set --vault-name "$KV_NAME" --name "QDRANT-ENDPOINT"   --value "$QDRANT_ENDPOINT"   --output none
-az keyvault secret set --vault-name "$KV_NAME" --name "QDRANT-API-KEY"    --value "$QDRANT_API_KEY"    --output none
-echo "    ✓ 5 secrets stored (DATABASE-URL will be added after PostgreSQL is ready)"
+az keyvault secret set --vault-name "$KV_NAME" --name "app-secret-key"         --value "$APP_SECRET_KEY"         --output none
+az keyvault secret set --vault-name "$KV_NAME" --name "anthropic-api-key"      --value "$ANTHROPIC_API_KEY"      --output none
+az keyvault secret set --vault-name "$KV_NAME" --name "openai-api-key"         --value "$OPENAI_API_KEY"         --output none
+az keyvault secret set --vault-name "$KV_NAME" --name "qdrant-url"             --value "$QDRANT_URL"             --output none
+az keyvault secret set --vault-name "$KV_NAME" --name "qdrant-api-key-ro"      --value "$QDRANT_API_KEY_RO"      --output none
+az keyvault secret set --vault-name "$KV_NAME" --name "qdrant-collection-name" --value "$QDRANT_COLLECTION_NAME" --output none
+echo "    ✓ 6 secrets stored (`postgres-url` will be added after PostgreSQL is ready)"
 
 # --------------------------------------------------------------------------- #
 # 6. Azure Database for PostgreSQL Flexible Server
@@ -244,12 +253,12 @@ az postgres flexible-server db create \
     --output         none 2>/dev/null || true
 
 PG_FQDN="${PG_SERVER}.postgres.database.azure.com"
-DATABASE_URL="postgresql://${PG_ADMIN_USER}:${PG_ADMIN_PASSWORD}@${PG_FQDN}/${PG_DB}?sslmode=require"
+POSTGRES_URL="postgresql://${PG_ADMIN_USER}:${PG_ADMIN_PASSWORD}@${PG_FQDN}/${PG_DB}?sslmode=require"
 
-az keyvault secret set --vault-name "$KV_NAME" --name "DATABASE-URL" --value "$DATABASE_URL" --output none
+az keyvault secret set --vault-name "$KV_NAME" --name "postgres-url" --value "$POSTGRES_URL" --output none
 echo "    ✓ $PG_SERVER ($PG_FQDN)"
 echo "    ✓ Database: $PG_DB"
-echo "    ✓ DATABASE-URL stored in Key Vault"
+echo "    ✓ postgres-url stored in Key Vault"
 
 # --------------------------------------------------------------------------- #
 # 7. Log Analytics Workspace (required by Container Apps Environment)
@@ -374,8 +383,9 @@ ACA_YAML="$(mktemp /tmp/containerapp-XXXXXX.yaml)"
 
 # Minimal skeleton — public placeholder image, no identity references.
 # The ARM validator rejects identity references until propagation is complete.
-# Jenkins configures secrets, registry, managed identity, and the real image
-# on the first pipeline run via az containerapp update --yaml.
+# Managed identity and registry wiring happen immediately below once the app
+# exists. Jenkins later replaces the placeholder image with the built backend
+# image during the normal deploy stages.
 cat > "$ACA_YAML" << YAML
 properties:
   managedEnvironmentId: ${ACA_ENV_ID}
@@ -539,7 +549,7 @@ echo ""
 # --------------------------------------------------------------------------- #
 
 echo "============================================="
-echo " Provisioning complete: movie-finder ($ENV)"
+echo " Provisioning complete: movie-finder-backend ($ENV)"
 echo "============================================="
 echo ""
 echo "  Container App URL  : https://$APP_FQDN"
@@ -560,5 +570,5 @@ echo "       Content type: application/json"
 echo "       Events      : Push, Pull request"
 echo "  4. Push to main (or tag a release) to trigger the first real deploy."
 echo "  5. Verify the app is healthy after the first Jenkins build:"
-echo "       curl https://$APP_FQDN/health"
+echo "       curl https://$APP_FQDN/health/live"
 echo ""

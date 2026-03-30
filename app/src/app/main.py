@@ -1,22 +1,21 @@
 """Movie Finder FastAPI application entry-point.
 
 Run locally:
-    uv run fastapi dev app/src/app/main.py --port 8000
-Or via Makefile:
-    make run-dev
+    make up
 """
 
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Annotated
 
 from chain import compile_graph  # type: ignore[attr-defined]
 from chain.utils.logger import get_logger
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, HTTPException, status
 
 from app.config import get_config
-from app.dependencies import set_graph, set_store
+from app.dependencies import get_store, set_graph, set_store
 from app.routers import auth, chat
 from app.session.store import SessionStore
 
@@ -58,5 +57,27 @@ app.include_router(chat.router)
 
 @app.get("/health", tags=["ops"])
 async def health() -> dict[str, str]:
+    """Backwards-compatible liveness probe."""
+    return await health_live()
+
+
+@app.get("/health/live", tags=["ops"])
+async def health_live() -> dict[str, str]:
     """Liveness probe."""
+    return {"status": "ok"}
+
+
+@app.get("/health/ready", tags=["ops"])
+async def health_ready(
+    store: Annotated[SessionStore, Depends(get_store)],
+) -> dict[str, str]:
+    """Readiness probe that verifies the database pool is available."""
+    try:
+        await store.ping()
+    except Exception as exc:
+        logger.warning("Readiness probe failed: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Session store unavailable",
+        ) from exc
     return {"status": "ok"}
