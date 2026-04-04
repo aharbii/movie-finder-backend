@@ -24,7 +24,8 @@
 
 .PHONY: help init up down logs shell lint format fix typecheck test test-coverage \
         pre-commit build run run-dev setup check editor-up editor-down ci-down detect-secrets \
-        db-upgrade db-downgrade db-current db-history db-revision lock clean clean-docker
+        db-upgrade db-downgrade db-current db-history db-revision db-backup db-restore \
+        lock clean clean-docker
 
 .DEFAULT_GOAL := help
 
@@ -45,6 +46,7 @@ TEST_DB_NAME ?= movie_finder_test
 TEST_DATABASE_URL ?= postgresql://$(DB_USER):$(DB_PASSWORD)@postgres:5432/$(TEST_DB_NAME)
 DB_REVISION ?= head
 MESSAGE ?= describe_change
+FILE ?=
 
 SOURCE_PATHS := app/src app/tests
 COVERAGE_XML ?= coverage.xml
@@ -99,6 +101,9 @@ help:
 	@echo "    db-current     Show the current Alembic revision inside Docker"
 	@echo "    db-history     Show Alembic migration history inside Docker"
 	@echo "    db-revision    Create a new empty Alembic revision inside Docker (MESSAGE=...)"
+	@echo "    db-backup      Dump the local DB to backups/db_<timestamp>.sql"
+	@echo "    db-restore     Restore from a backup file (FILE=backups/db_<timestamp>.sql)"
+	@echo "                   Safe to run on an existing DB — never drops or truncates data"
 	@echo "    lock           Refresh uv.lock inside Docker after dependency changes"
 	@echo ""
 	@echo "  Maintenance"
@@ -212,6 +217,14 @@ db-history:
 
 db-revision:
 	$(call exec_or_run,alembic revision -m "$(MESSAGE)")
+
+db-backup:
+	@mkdir -p backups
+	@sh scripts/db-backup.sh
+
+db-restore:
+	@[ -n "$(FILE)" ] || (echo "Usage: make db-restore FILE=backups/db_<timestamp>.sql" && exit 1)
+	@sh scripts/db-restore.sh "$(FILE)"
 
 lock:
 	$(call exec_or_run,uv lock)

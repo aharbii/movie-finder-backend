@@ -30,6 +30,9 @@ htmlcov/
 # Secrets — never commit
 .env
 
+# Database backups — local only, never commit
+backups/
+
 # Logs
 logs/
 *.log
