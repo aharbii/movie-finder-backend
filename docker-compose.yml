@@ -102,6 +102,12 @@ services:
       - ./.pre-commit-config.yaml:/workspace/.pre-commit-config.yaml
       - ./.secrets.baseline:/workspace/.secrets.baseline
 
+      # Test and coverage report output — written inside the container and
+      # read back on the host (e.g. by CI artifact collectors or Coverage Gutters).
+      - ./coverage.xml:/workspace/coverage.xml
+      - ./junit.xml:/workspace/junit.xml
+      - ./htmlcov:/workspace/htmlcov
+
       # The Bridge: Mount the submodule's metadata folder (read-only)
       # so Git can find its history without following relative submodule pointers.
       - ${BACKEND_GIT_DIR:-.git}:/workspace/.gitdir
