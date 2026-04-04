@@ -37,33 +37,33 @@ Jenkinsfile
 
 ### Submodule map
 
-| Path | GitHub repo | Role |
-|---|---|---|
-| `.` (root) | `aharbii/movie-finder` | Parent — cross-repo planning and issue tracking |
-| `backend/` | `aharbii/movie-finder-backend` | **← you are here** |
-| `backend/app/` | (nested) | FastAPI application layer |
-| `backend/chain/` | `aharbii/movie-finder-chain` | LangGraph AI pipeline |
-| `backend/imdbapi/` | `aharbii/imdbapi-client` | Async IMDb REST client |
-| `backend/rag_ingestion/` | `aharbii/movie-finder-rag` | Offline embedding ingestion |
-| `frontend/` | `aharbii/movie-finder-frontend` | Angular SPA |
-| `docs/` | `aharbii/movie-finder-docs` | Architecture + docs |
-| `infrastructure/` | `aharbii/movie-finder-infrastructure` | IaC / Azure provisioning |
+| Path                     | GitHub repo                           | Role                                            |
+| ------------------------ | ------------------------------------- | ----------------------------------------------- |
+| `.` (root)               | `aharbii/movie-finder`                | Parent — cross-repo planning and issue tracking |
+| `backend/`               | `aharbii/movie-finder-backend`        | **← you are here**                              |
+| `backend/app/`           | (nested)                              | FastAPI application layer                       |
+| `backend/chain/`         | `aharbii/movie-finder-chain`          | LangGraph AI pipeline                           |
+| `backend/chain/imdbapi/` | `aharbii/imdbapi-client`              | Async IMDb REST client                          |
+| `backend/rag_ingestion/` | `aharbii/movie-finder-rag`            | Offline embedding ingestion                     |
+| `frontend/`              | `aharbii/movie-finder-frontend`       | Angular SPA                                     |
+| `docs/`                  | `aharbii/movie-finder-docs`           | Architecture + docs                             |
+| `infrastructure/`        | `aharbii/movie-finder-infrastructure` | IaC / Azure provisioning                        |
 
 ### Technology stack
 
-| Layer | Stack |
-|---|---|
-| Language | Python 3.13 |
-| API | FastAPI 0.115+, `StreamingResponse` (SSE) |
-| Auth | JWT (python-jose), bcrypt, PostgreSQL session store |
-| Database | PostgreSQL 16, asyncpg |
-| Vector store | Qdrant Cloud (external only) |
-| Package manager | `uv` workspace root |
-| Local dev | Docker Compose + attached-container VS Code workflow |
-| Linting | `ruff` |
-| Type checking | `mypy --strict` |
-| Tests | `pytest --asyncio-mode=auto`, `pytest-cov` |
-| CI/CD | Jenkins → Azure Container Registry → Azure Container Apps |
+| Layer           | Stack                                                     |
+| --------------- | --------------------------------------------------------- |
+| Language        | Python 3.13                                               |
+| API             | FastAPI 0.115+, `StreamingResponse` (SSE)                 |
+| Auth            | JWT (python-jose), bcrypt, PostgreSQL session store       |
+| Database        | PostgreSQL 16, asyncpg                                    |
+| Vector store    | Qdrant Cloud (external only)                              |
+| Package manager | `uv` workspace root                                       |
+| Local dev       | Docker Compose + attached-container VS Code workflow      |
+| Linting         | `ruff`                                                    |
+| Type checking   | `mypy --strict`                                           |
+| Tests           | `pytest --asyncio-mode=auto`, `pytest-cov`                |
+| CI/CD           | Jenkins → Azure Container Registry → Azure Container Apps |
 
 ### Environment variables (`.env.example`)
 
@@ -103,13 +103,13 @@ If the backend root needs to reference those repos:
 
 ## Design patterns to follow
 
-| Pattern | Where | Rule |
-|---|---|---|
-| **Dependency injection** | `app/` routes | Use FastAPI `Depends()` for db pool, current user, config, and graph. Never instantiate shared resources inside route handlers. |
-| **Repository** | Database layer | Data access lives in repository classes. No raw SQL in route handlers. |
-| **Configuration object** | `config.py` / Pydantic `BaseSettings` | Load env vars once. Never scatter `os.getenv()` through business logic. |
-| **Middleware chain** | FastAPI middleware | Cross-cutting concerns belong in middleware, not repeated per route. |
-| **SSE as a stream** | Streaming route | The SSE endpoint is a thin proxy. Business logic stays in `chain/`. |
+| Pattern                  | Where                                 | Rule                                                                                                                            |
+| ------------------------ | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| **Dependency injection** | `app/` routes                         | Use FastAPI `Depends()` for db pool, current user, config, and graph. Never instantiate shared resources inside route handlers. |
+| **Repository**           | Database layer                        | Data access lives in repository classes. No raw SQL in route handlers.                                                          |
+| **Configuration object** | `config.py` / Pydantic `BaseSettings` | Load env vars once. Never scatter `os.getenv()` through business logic.                                                         |
+| **Middleware chain**     | FastAPI middleware                    | Cross-cutting concerns belong in middleware, not repeated per route.                                                            |
+| **SSE as a stream**      | Streaming route                       | The SSE endpoint is a thin proxy. Business logic stays in `chain/`.                                                             |
 
 ---
 
@@ -129,7 +129,6 @@ If the backend root needs to reference those repos:
 ## Pre-commit hooks
 
 `backend/.pre-commit-config.yaml` covers `app/`; `chain/`, `imdbapi/`, `rag_ingestion/` each have their own.
-
 
 ```bash
 make pre-commit
@@ -206,36 +205,39 @@ surfaces remain owned by their own issues.
 
 Full detail in `ai-context/issue-agent-briefing-template.md`.
 
-| # | Category | Key gate |
-|---|---|---|
-| 1 | **Issues** | Parent `aharbii/movie-finder` + child here only if this repo changes; templates inspected |
-| 2 | **Branch** | `feature/fix/chore/docs` in this repo + pointer-bump `chore/` in root `movie-finder` |
-| 3 | **ADR** | New external dep, auth model change, or API contract decision → ADR in `docs/` |
-| 4 | **Implementation** | DI / Repository / Middleware patterns; thin route handlers; `ruff`+`mypy --strict` pass; pre-commit pass |
-| 5 | **Tests** | `pytest --asyncio-mode=auto` passes; coverage doesn't regress |
-| 6 | **Env & secrets** | `.env.example` updated here + root + `frontend/` if API changed; new secrets → Key Vault + Jenkins |
-| 7 | **Docker** | `Dockerfile` + `docker-compose.yml` updated for dep/env/port changes |
-| 8 | **CI** | `Jenkinsfile` / `.github/workflows/` reviewed for new creds or stages |
-| 9 | **Diagrams** | `03-backend-architecture.puml`, `07-seq-authentication.puml`, `08-seq-chat-sse.puml`; `workspace.dsl` if C4 changed; commit to `docs/` first; **never `.mdj`** |
-| 9a | **Docs** | `docs/` pages updated; OpenAPI verified; `README.md` + `CHANGELOG.md` updated |
+| #   | Category           | Key gate                                                                                                                                                       |
+| --- | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | **Issues**         | Parent `aharbii/movie-finder` + child here only if this repo changes; templates inspected                                                                      |
+| 2   | **Branch**         | `feature/fix/chore/docs` in this repo + pointer-bump `chore/` in root `movie-finder`                                                                           |
+| 3   | **ADR**            | New external dep, auth model change, or API contract decision → ADR in `docs/`                                                                                 |
+| 4   | **Implementation** | DI / Repository / Middleware patterns; thin route handlers; `ruff`+`mypy --strict` pass; pre-commit pass                                                       |
+| 5   | **Tests**          | `pytest --asyncio-mode=auto` passes; coverage doesn't regress                                                                                                  |
+| 6   | **Env & secrets**  | `.env.example` updated here + root + `frontend/` if API changed; new secrets → Key Vault + Jenkins                                                             |
+| 7   | **Docker**         | `Dockerfile` + `docker-compose.yml` updated for dep/env/port changes                                                                                           |
+| 8   | **CI**             | `Jenkinsfile` / `.github/workflows/` reviewed for new creds or stages                                                                                          |
+| 9   | **Diagrams**       | `03-backend-architecture.puml`, `07-seq-authentication.puml`, `08-seq-chat-sse.puml`; `workspace.dsl` if C4 changed; commit to `docs/` first; **never `.mdj`** |
+| 9a  | **Docs**           | `docs/` pages updated; OpenAPI verified; `README.md` + `CHANGELOG.md` updated                                                                                  |
 
 ### 10. Sibling submodules likely affected
-| Submodule | Why |
-|---|---|
-| `backend/chain/` | Invocation interface, SSE event shape, state changes |
-| `backend/app/` | Direct child — most route changes live here |
-| `backend/imdbapi/` | IMDb integration surface |
-| `frontend/` | API contract, SSE event fields, auth flow |
-| `infrastructure/` | New Azure resources, new env vars, new secrets |
-| `docs/` | API docs, DevOps setup, architecture |
+
+| Submodule                | Why                                                  |
+| ------------------------ | ---------------------------------------------------- |
+| `backend/chain/`         | Invocation interface, SSE event shape, state changes |
+| `backend/app/`           | Direct child — most route changes live here          |
+| `backend/chain/imdbapi/` | IMDb integration surface                             |
+| `frontend/`              | API contract, SSE event fields, auth flow            |
+| `infrastructure/`        | New Azure resources, new env vars, new secrets       |
+| `docs/`                  | API docs, DevOps setup, architecture                 |
 
 ### 11. Submodule pointer bump
+
 ```bash
 # in root movie-finder
 git add backend && git commit -m "chore(backend): bump to latest main"
 ```
 
 ### 12. Pull request
+
 - [ ] PR in `aharbii/movie-finder-backend` discloses the AI authoring tool + model
 - [ ] PR in `aharbii/movie-finder` (pointer bump)
 - [ ] Any AI-assisted review comment or approval discloses the review tool + model
