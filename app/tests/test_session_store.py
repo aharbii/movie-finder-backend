@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import asyncpg
 import pytest
 
@@ -133,7 +135,7 @@ class TestGetSessions:
 
 
 class TestMessages:
-    async def _session(self, store: SessionStore) -> str:
+    async def _session(self, store: SessionStore) -> str | Any:
         user = await store.create_user("m@example.com", "pw")
         session = await store.create_session(user.id)
         return session["id"]
@@ -162,7 +164,7 @@ class TestMessages:
 
 
 class TestConfirmedMovie:
-    async def _session(self, store: SessionStore) -> str:
+    async def _session(self, store: SessionStore) -> str | Any:
         user = await store.create_user("cm@example.com", "pw")
         session = await store.create_session(user.id)
         return session["id"]

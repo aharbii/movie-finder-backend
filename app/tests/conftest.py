@@ -26,7 +26,7 @@ from langchain_core.messages import AIMessage
 os.environ.setdefault("APP_SECRET_KEY", "test-secret-key-for-pytest-only-1234567890abc")
 os.environ.setdefault(
     "DATABASE_URL",
-    "postgresql://postgres:postgres@localhost:5432/movie_finder_test",  # pragma: allowlist secret
+    "postgresql://movie_finder:devpassword@postgres:5432/movie_finder_test",  # pragma: allowlist secret
 )
 
 
@@ -36,11 +36,11 @@ os.environ.setdefault(
 
 
 @pytest.fixture(autouse=True)
-def _reset_config_cache() -> AsyncGenerator[None]:
+async def _reset_config_cache() -> AsyncIterator[None]:
     from app.config import get_config
 
     get_config.cache_clear()
-    yield  # type: ignore[misc]
+    yield
     get_config.cache_clear()
 
 
@@ -148,7 +148,7 @@ async def client(store: Any, mock_graph: MagicMock) -> AsyncGenerator[httpx.Asyn
     app.router.lifespan_context = _noop_lifespan
 
     async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app),  # type: ignore[arg-type]
+        transport=httpx.ASGITransport(app=app),
         base_url="http://test",
     ) as c:
         yield c

@@ -83,14 +83,13 @@ services:
       IMDB_SEARCH_LIMIT: ${IMDB_SEARCH_LIMIT:-3}
       CONFIDENCE_THRESHOLD: ${CONFIDENCE_THRESHOLD:-0.3}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      GIT_DIR: /git_metadata
+      GIT_DIR: /workspace/.gitdir
       GIT_WORK_TREE: /workspace
     volumes:
       # Surgically mount source code for maximum macOS performance.
       # This avoids the overhead of syncing .git, .venv, and cache folders.
       - ./app:/workspace/app
       - ./chain:/workspace/chain
-      - ./imdbapi:/workspace/imdbapi
       - ./scripts:/workspace/scripts
       # Mount workspace configuration and documentation.
       - ./pyproject.toml:/workspace/pyproject.toml
@@ -101,10 +100,11 @@ services:
       - ./Dockerfile:/workspace/Dockerfile
       - ./.gitignore:/workspace/.gitignore
       - ./.pre-commit-config.yaml:/workspace/.pre-commit-config.yaml
+      - ./.secrets.baseline:/workspace/.secrets.baseline
 
       # The Bridge: Mount the submodule's metadata folder (read-only)
       # so Git can find its history without following relative submodule pointers.
-      - ${BACKEND_GIT_DIR:-.git}:/git_metadata:ro
+      - ${BACKEND_GIT_DIR:-.git}:/workspace/.gitdir
 
       # Tool caches live in named volumes so rebuilds stay fast.
       - uv_cache:/root/.cache/uv

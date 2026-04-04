@@ -28,17 +28,10 @@ ENV PYTHONUNBUFFERED=1 \
 # Used by `docker-compose.yml` and VS Code "Attach to Running Container".
 FROM uv-base AS dev
 
-# Install development tools needed for VS Code, quality commands, and make shell.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
-    zsh \
     make \
-    curl \
     && rm -rf /var/lib/apt/lists/*
-
-# Configure a minimal shell prompt without internet downloads.
-RUN printf 'export PS1="[backend] %n@%m:%~%% "\nalias ls="ls --color=auto"\nalias ll="ls -alF"\n' \
-    > /root/.zshrc
 
 RUN git config --global --add safe.directory /workspace
 
@@ -50,18 +43,18 @@ RUN python -m venv /opt/venv
 
 ENV PATH="/opt/venv/bin:$PATH" \
     VIRTUAL_ENV="/opt/venv" \
-    PYTHONPATH="/workspace/app/src:/workspace/chain/src:/workspace/imdbapi/src"
+    PYTHONPATH="/workspace/app/src:/workspace/chain/src:/workspace/chain/imdbapi/src"
 
-# Copy manifests only so Docker can cache the dependency layer aggressively.
+# Copy manifests and metadata only so Docker can cache the dependency layer aggressively.
 # `--no-install-workspace` keeps the source tree out of the image because local
 # development bind-mounts the live checkout into /workspace at runtime.
-COPY pyproject.toml uv.lock ./
-COPY chain/pyproject.toml ./chain/
-COPY imdbapi/pyproject.toml ./imdbapi/
-COPY app/pyproject.toml ./app/
+COPY pyproject.toml uv.lock README.md ./
+COPY chain/pyproject.toml chain/README.md ./chain/
+COPY chain/imdbapi/pyproject.toml chain/imdbapi/README.md ./chain/imdbapi/
+COPY app/pyproject.toml app/README.md ./app/
 
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --all-packages --all-groups --active --no-install-workspace
+    uv sync --all-packages --all-groups --active --no-install-workspace
 
 CMD ["uvicorn", "app.main:app", "--reload", "--host", "0.0.0.0", "--port", "8000"]
 
@@ -74,7 +67,7 @@ WORKDIR /build
 # Copy workspace manifests and lock file first for layer caching.
 COPY pyproject.toml uv.lock ./
 COPY chain/pyproject.toml ./chain/
-COPY imdbapi/pyproject.toml ./imdbapi/
+COPY chain/imdbapi/pyproject.toml ./chain/imdbapi/
 COPY app/pyproject.toml ./app/
 
 # Install production dependencies for all workspace members into an isolated
@@ -84,7 +77,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 # Copy actual source after dependencies are cached.
 COPY chain/src ./chain/src
-COPY imdbapi/src ./imdbapi/src
+COPY chain/imdbapi/src ./chain/imdbapi/src
 COPY app/src ./app/src
 
 
@@ -104,7 +97,7 @@ WORKDIR /app
 COPY --link --from=builder /build/.venv /app/.venv
 COPY --link --from=builder /build/app/src ./src
 COPY --link --from=builder /build/chain/src ./chain_src
-COPY --link --from=builder /build/imdbapi/src ./imdbapi_src
+COPY --link --from=builder /build/chain/imdbapi/src ./imdbapi_src
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -121,9 +114,9 @@ EXPOSE 8000
 # Uses stdlib urllib so the slim image does not need curl.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD python -c \
-        "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/live', timeout=3)" \
-        || exit 1
+    "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/live', timeout=3)" \
+    || exit 1
 
 CMD ["python", "-m", "uvicorn", "app.main:app", \
-     "--host", "0.0.0.0", "--port", "8000", \
-     "--workers", "1"]
+    "--host", "0.0.0.0", "--port", "8000", \
+    "--workers", "1"]

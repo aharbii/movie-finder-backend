@@ -99,7 +99,7 @@ VS Code workflow:
 - run `make editor-up` (or `make up`) and run host tasks through `make ...`
 - attach VS Code to the running `backend` service container
 - use `/opt/venv/bin/python` inside that container
-- Python analysis should see `app/src`, `chain/src`, and `imdbapi/src`
+- Python analysis should see `app/src`, `chain/src`, and the `imdbapi` submodule
 - Python Test Explorer is configured for `app/tests/` only in this iteration
 
 ---

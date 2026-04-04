@@ -40,7 +40,7 @@
 //   aca-prod-name      Secret Text      Production Container App name
 //
 // Jenkins plugins required:
-//   GitHub, Docker, JUnit, Credentials Binding, Git
+//   GitHub, Docker, JUnit, Coverage, Credentials Binding, Git
 // =============================================================================
 
 pipeline {
@@ -62,103 +62,70 @@ pipeline {
 
     environment {
         SERVICE_NAME = 'movie-finder-backend'
+        COMPOSE_PROJECT_NAME = "movie-finder-backend-ci-${env.BUILD_NUMBER}"
     }
 
     stages {
 
         // ------------------------------------------------------------------ //
-        stage('Checkout Submodules') {
-            agent any
+        stage('Checkout') {
             steps {
-                withCredentials([sshUserPrivateKey(
-                    credentialsId: 'github-ssh-key',
-                    keyFileVariable: 'SSH_KEY'
-                )]) {
-                    sh '''
-                        eval $(ssh-agent -s)
-                        ssh-add "$SSH_KEY"
-                        git submodule update --init --recursive
-                        ssh-agent -k
-                    '''
-                }
-                // Stash the complete workspace so later stages can run on any
-                // executor with the full repo + submodule checkout.
-                stash name: 'source', excludes: '.git,**/.git,**/.venv,**/htmlcov,**/*.xml'
+                checkout([
+                    $class: 'GitSCM',
+                    branches: scm.branches,
+                    doGenerateSubmoduleConfigurations: false,
+                    extensions: [[
+                        $class: 'SubmoduleOption',
+                        disableSubmodules: false,
+                        parentCredentials: true,
+                        recursiveSubmodules: true,
+                        trackingSubmodules: false
+                    ]],
+                    userRemoteConfigs: scm.userRemoteConfigs
+                ])
             }
         }
 
         // ------------------------------------------------------------------ //
-        stage('Lint + Typecheck — backend app') {
-            agent any
-            options { skipDefaultCheckout() }
+        stage('Initialize') {
             steps {
-                unstash 'source'
-                dir('backend') {
-                    sh '''
-                        set -e
-                        export COMPOSE_PROJECT_NAME="movie-finder-backend-ci-${BUILD_NUMBER}"
-                        make init
-                        make lint
-                        make typecheck
-                    '''
-                }
+                sh 'make init'
             }
-            post {
-                always {
-                    dir('backend') {
-                        sh '''
-                            export COMPOSE_PROJECT_NAME="movie-finder-backend-ci-${BUILD_NUMBER}"
-                            make ci-down || true
-                        '''
-                    }
+        }
+
+        // ------------------------------------------------------------------ //
+        stage('Lint + Typecheck') {
+            parallel {
+                stage('Lint') {
+                    steps { sh 'make lint' }
+                }
+                stage('Typecheck') {
+                    steps { sh 'make typecheck' }
                 }
             }
         }
 
         // ------------------------------------------------------------------ //
-        stage('Test — backend app') {
-            agent any
-            options { skipDefaultCheckout() }
-            environment {
-                APP_SECRET_KEY = 'ci-test-only-not-a-real-secret' // pragma: allowlist secret
-                OPENAI_API_KEY = 'sk-test-openai' // pragma: allowlist secret
-                ANTHROPIC_API_KEY = 'sk-ant-test' // pragma: allowlist secret
-                QDRANT_URL = 'https://test.qdrant.io' // pragma: allowlist secret
-                QDRANT_API_KEY_RO = 'test-key' // pragma: allowlist secret
-                QDRANT_COLLECTION_NAME = 'movies'
-            }
+        stage('Test') {
             steps {
-                unstash 'source'
-                dir('backend') {
-                    sh '''
-                        set -e
-                        export COMPOSE_PROJECT_NAME="movie-finder-backend-ci-${BUILD_NUMBER}"
-                        # Compose publishes host ports even for dependency services, so
-                        # keep them unique per build to avoid collisions on shared agents.
-                        export POSTGRES_HOST_PORT="$((54320 + BUILD_NUMBER % 1000))"
-                        export BACKEND_HOST_PORT="$((55320 + BUILD_NUMBER % 1000))"
-                        export TEST_DATABASE_URL="postgresql://movie_finder:devpassword@postgres:5432/movie_finder_test" # pragma: allowlist secret
-                        make init
-                        docker compose run --rm \
-                            -e DATABASE_URL="$TEST_DATABASE_URL" \
-                            backend pytest app/tests/ \
-                                --cov=app \
-                                --cov-report=xml:app-coverage.xml \
-                                --junitxml=app-test-results.xml \
-                                -v --tb=short
-                    '''
-                }
+                sh 'make test-coverage'
             }
             post {
                 always {
-                    junit allowEmptyResults: true, testResults: 'backend/app-test-results.xml'
-                    archiveArtifacts artifacts: 'backend/app-coverage.xml', allowEmptyArchive: true
-                    dir('backend') {
-                        sh '''
-                            export COMPOSE_PROJECT_NAME="movie-finder-backend-ci-${BUILD_NUMBER}"
-                            make ci-down || true
-                        '''
-                    }
+                    junit allowEmptyResults: true, testResults: 'junit.xml'
+                    recordCoverage(
+                        tools: [
+                            [parser: 'COBERTURA', pattern: 'coverage.xml']
+                        ],
+                        id: 'coverage',
+                        name: 'Chain Coverage',
+                        sourceCodeRetention: 'EVERY_BUILD',
+                        failOnError: false,
+                        qualityGates: [
+                            [threshold: 10.0, metric: 'LINE', baseline: 'PROJECT', unstable: true],
+                            [threshold: 10.0, metric: 'BRANCH', baseline: 'PROJECT', unstable: true]
+                        ]
+                    )
                 }
             }
         }
@@ -310,9 +277,9 @@ pipeline {
 
     post {
         always {
-            node('') {
-                cleanWs()
-            }
+            sh 'make clean || true'
+            sh 'make ci-down || true'
+            cleanWs()
         }
         failure {
             echo "Pipeline failed on ${env.BRANCH_NAME ?: env.GIT_TAG_NAME ?: 'unknown ref'}."

@@ -1,30 +1,43 @@
 [tool.uv.workspace]
-members = ["imdbapi", "chain", "app"]
+members = ["chain", "app", "chain/imdbapi"]
 # rag_ingestion is NOT a workspace member — it has its own uv.lock and lifecycle.
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 addopts = ["--import-mode=prepend"]
-pythonpath = ["chain/src", "imdbapi/src", "app/src", "rag_ingestion/src"]
-norecursedirs = ["rag_ingestion"]
+pythonpath = ["chain/src", "chain/imdbapi/src", "app/src", "rag_ingestion/src"]
+norecursedirs = [
+    "rag_ingestion",
+    "chain/examples",
+    "chain/imdbapi/examples",
+    "rag_ingestion/scripts",
+]
 filterwarnings = [
     "ignore::UserWarning:langchain_core",
     "ignore::pytest.PytestUnraisableExceptionWarning",
 ]
 
 [tool.ruff]
-line-length = 100
 target-version = "py313"
-src = ["chain/src", "imdbapi/src", "app/src", "rag_ingestion/src", "tests"]
+line-length = 100
+src = ["app/src", "chain/src", "chain/imdbapi/src", "rag_ingestion/src"]
+exclude = ["chain/examples", "chain/imdbapi/examples", "rag_ingestion/scripts"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "N", "UP", "B", "C4", "SIM"]
+select = ["E", "W", "F", "I", "N", "UP", "B", "C4", "SIM"]
 ignore = ["E501"]
 
 [tool.mypy]
 python_version = "3.13"
+mypy_path = "app/src:chain/src:chain/imdbapi/src:rag_ingestion/src"
+exclude = ["chain/examples", "chain/imdbapi/examples", "rag_ingestion/scripts"]
 strict = true
+explicit_package_bases = true
+namespace_packages = true
 ignore_missing_imports = true
+warn_return_any = true
+warn_unused_ignores = true
+plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
 # TitlesEndpoint has a method named `list` which mypy confuses with the builtin

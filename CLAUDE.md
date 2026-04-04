@@ -13,7 +13,7 @@ packages consumed by the app.
 - **Auth:** JWT (python-jose, bcrypt) — 30-min access token, 7-day refresh token
 - **Sessions:** PostgreSQL 16 via asyncpg connection pool
 - **Streaming:** SSE (`StreamingResponse`) — proxies LangGraph pipeline events to the frontend
-- **uv workspace:** `app/`, `chain/`, `imdbapi/` are members; `rag_ingestion/` is not
+- **uv workspace:** `app/` and `chain/` are members (`imdbapi/` and `rag_ingestion/` are independent path dependencies)
 - **Makefile:** `backend/Makefile` — Docker-only dev contract for the backend app stack
 - **Pre-commit:** runs inside Docker via `make pre-commit`
 
@@ -22,7 +22,7 @@ packages consumed by the app.
 ```text
 app/src/          FastAPI application (routes, middleware, deps)
 chain/src/        LangGraph pipeline imported by the app
-imdbapi/src/      Async IMDb REST client imported by chain
+imdbapi/          Independent submodule (imported by chain via path dependency)
 rag_ingestion/    Standalone child repo (not part of the backend dev image)
 pyproject.toml    uv workspace root + shared tool config (ruff, mypy, pytest)
 docker-compose.yml

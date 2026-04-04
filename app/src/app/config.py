@@ -44,4 +44,4 @@ class AppConfig(BaseSettings):
 @lru_cache(maxsize=1)
 def get_config() -> AppConfig:
     """Return the singleton AppConfig (cached after first call)."""
-    return AppConfig()  # type: ignore[call-arg]
+    return AppConfig()

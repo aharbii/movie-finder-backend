@@ -10,14 +10,14 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Annotated
 
-from chain import compile_graph  # type: ignore[attr-defined]
-from chain.utils.logger import get_logger
 from fastapi import Depends, FastAPI, HTTPException, status
 
 from app.config import get_config
 from app.dependencies import get_store, set_graph, set_store
 from app.routers import auth, chat
 from app.session.store import SessionStore
+from chain import compile_graph
+from chain.utils.logger import get_logger
 
 logger = get_logger(__name__)
 

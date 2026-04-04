@@ -1,7 +1,3 @@
-[submodule "imdbapi"]
-	path = imdbapi
-	url = ../imdbapi-client.git
-
 [submodule "rag_ingestion"]
 	path = rag_ingestion
 	url = ../movie-finder-rag.git

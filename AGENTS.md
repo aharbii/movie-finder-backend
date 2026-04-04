@@ -11,7 +11,7 @@ FastAPI backend — HTTP/SSE API layer and backend integration root.
 - **Auth:** JWT (python-jose, bcrypt)
 - **Sessions:** PostgreSQL 16 via asyncpg
 - **Streaming:** SSE proxies LangGraph pipeline events
-- **uv workspace:** `app/`, `chain/`, `imdbapi/` are members
+- **uv workspace:** `app/` and `chain/` are members (`imdbapi/` and `rag_ingestion/` are independent path dependencies)
 - **rag_ingestion:** standalone child repo, not part of the backend dev image
 
 ---

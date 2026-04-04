@@ -23,7 +23,8 @@
 # =============================================================================
 
 .PHONY: help init up down logs shell lint format fix typecheck test test-coverage \
-        pre-commit build run run-dev setup check editor-up editor-down ci-down detect-secrets
+        pre-commit build run run-dev setup check editor-up editor-down ci-down detect-secrets \
+        clean clean-docker
 
 .DEFAULT_GOAL := help
 
@@ -43,10 +44,10 @@ DB_PASSWORD ?= devpassword
 TEST_DB_NAME ?= movie_finder_test
 TEST_DATABASE_URL ?= postgresql://$(DB_USER):$(DB_PASSWORD)@postgres:5432/$(TEST_DB_NAME)
 
-APP_PATHS := app/src app/tests
-COVERAGE_XML ?= app-coverage.xml
-COVERAGE_HTML ?= htmlcov/app
-JUNIT_XML ?= test-results/junit.xml
+SOURCE_PATHS := app/src app/tests
+COVERAGE_XML ?= coverage.xml
+COVERAGE_HTML ?= htmlcov
+JUNIT_XML ?= junit.xml
 
 # ---------------------------------------------------------------------------
 # exec when running, run --rm otherwise — avoids container startup overhead
@@ -90,8 +91,14 @@ help:
 	@echo "    pre-commit     Run all pre-commit hooks"
 	@echo "    check          lint + typecheck + test-coverage"
 	@echo ""
+	@echo "  Maintenance"
+	@echo "    clean          Remove __pycache__, .pytest_cache, .mypy_cache, reports (via Docker)"
+	@echo "    clean-docker   Stop containers and remove volumes + local images"
+	@echo ""
 	@echo "  Compatibility aliases"
-	@echo "    build / run / run-dev / setup   Aliases for init / up / up / init"
+	@echo "    build          Alias for init"
+	@echo "    run / run-dev  Alias for editor-up"
+	@echo "    setup          Alias for init"
 	@echo ""
 
 init:
@@ -101,25 +108,23 @@ init:
 	@chmod +x $(GIT_HOOKS_DIR)/pre-commit
 	@echo ">>> git pre-commit hook installed (calls 'make pre-commit' on every commit)"
 
+build: init
+setup: init
+
 editor-up:
 	$(COMPOSE) up -d $(SERVICE)
+
+up: editor-up
+run: editor-up
+run-dev: editor-up
 
 editor-down:
 	$(COMPOSE) down --remove-orphans
 
+down: editor-down
+
 ci-down:
 	$(COMPOSE) down -v --remove-orphans
-	# Remove the locally-built dev image explicitly.
-	# --rmi local skips images that have a custom `image:` field in compose,
-	# so we remove it by name. Public images (postgres:16-alpine, python:3.13-slim)
-	# are NOT removed — they remain cached on the Jenkins node for future builds.
-	docker rmi movie-finder-backend:local || true
-
-up:
-	$(COMPOSE) up -d
-
-down:
-	$(COMPOSE) down --remove-orphans
 
 logs:
 	$(COMPOSE) logs -f $(SERVICE) postgres
@@ -132,17 +137,17 @@ shell:
 	fi
 
 lint:
-	$(call exec_or_run,ruff check $(APP_PATHS))
+	$(call exec_or_run,ruff check $(SOURCE_PATHS))
 
 format:
-	$(call exec_or_run,ruff format $(APP_PATHS))
+	$(call exec_or_run,ruff format $(SOURCE_PATHS))
 
 fix:
-	$(call exec_or_run,ruff check --fix $(APP_PATHS))
-	$(call exec_or_run,ruff format $(APP_PATHS))
+	$(call exec_or_run,ruff check --fix $(SOURCE_PATHS))
+	$(call exec_or_run,ruff format $(SOURCE_PATHS))
 
 typecheck:
-	$(call exec_or_run,mypy app/src)
+	$(call exec_or_run,mypy $(SOURCE_PATHS))
 
 test:
 	@if $(COMPOSE) ps --services --status running 2>/dev/null | grep -qx "$(SERVICE)"; then \
@@ -173,14 +178,23 @@ test-coverage:
 	fi
 
 detect-secrets:
-	$(call exec_or_run,detect-secrets scan --baseline .secrets.baseline) # pragma: allowlist secret
+	$(call exec_or_run,detect-secrets scan --baseline .secrets.baseline)
 
 pre-commit:
 	$(call exec_or_run,pre-commit run --all-files)
 
 check: lint typecheck test-coverage
 
-build: init
-run: up
-run-dev: up
-setup: init
+clean:
+	@echo ">>> Removing Python cache files (via Docker)..."
+	$(call exec_or_run,find . -type d -name "__pycache__" -not -path "./.git/*" -exec rm -rf {} + 2>/dev/null || true)
+	$(call exec_or_run,find . -type d -name ".pytest_cache" -not -path "./.git/*" -exec rm -rf {} + 2>/dev/null || true)
+	$(call exec_or_run,find . -type d -name ".mypy_cache" -not -path "./.git/*" -exec rm -rf {} + 2>/dev/null || true)
+	$(call exec_or_run,find . -type d -name ".ruff_cache" -not -path "./.git/*" -exec rm -rf {} + 2>/dev/null || true)
+	$(call exec_or_run,find . -name "*.egg-info" -not -path "./.git/*" -exec rm -rf {} + 2>/dev/null || true)
+	$(call exec_or_run,find . -name "$(COVERAGE_XML)" -not -path "./.git/*" -delete 2>/dev/null || true)
+	$(call exec_or_run,find . -name "$(JUNIT_XML)" -not -path "./.git/*" -delete 2>/dev/null || true)
+	$(call exec_or_run,find . -type d -name "$(COVERAGE_HTML)" -not -path "./.git/*" -exec rm -rf {} + 2>/dev/null || true)
+	@echo "Clean complete."
+
+clean-docker: ci-down

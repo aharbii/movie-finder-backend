@@ -14,8 +14,8 @@ build/
 .pytest_cache/
 .coverage
 coverage.xml
-app-coverage.xml
 test-results.xml
+junit.xml
 htmlcov/
 
 # IDEs

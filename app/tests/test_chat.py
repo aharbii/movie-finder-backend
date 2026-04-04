@@ -225,7 +225,7 @@ class TestChatEndpoint:
 
         try:
             async with httpx.AsyncClient(
-                transport=httpx.ASGITransport(app=app),  # type: ignore[arg-type]
+                transport=httpx.ASGITransport(app=app),
                 base_url="http://test",
             ) as c:
                 _, _, token = registered_user
@@ -262,7 +262,7 @@ class TestChatEndpoint:
 
         try:
             async with httpx.AsyncClient(
-                transport=httpx.ASGITransport(app=app),  # type: ignore[arg-type]
+                transport=httpx.ASGITransport(app=app),
                 base_url="http://test",
             ) as c:
                 _, _, token = registered_user
@@ -576,7 +576,7 @@ class TestConfirmedMoviePersistence:
         sid = new_session_id()
         try:
             async with httpx.AsyncClient(
-                transport=httpx.ASGITransport(app=app),  # type: ignore[arg-type]
+                transport=httpx.ASGITransport(app=app),
                 base_url="http://test",
             ) as c:
                 _, _, token = registered_user
