@@ -8,12 +8,12 @@ current **backend-only Docker iteration**.
 
 ## Repository map
 
-| Repo | GitHub | Team | Consumed by |
-|------|--------|------|-------------|
-| `movie-finder-backend` | `aharbii/movie-finder-backend` | App / Backend | end users |
-| `movie-finder-chain` | `aharbii/movie-finder-chain` | AI Engineering | backend app |
-| `imdbapi-client` | `aharbii/imdbapi-client` | IMDb API | chain |
-| `movie-finder-rag` | `aharbii/movie-finder-rag` | AI / Data Engineering | chain via Qdrant |
+| Repo                   | GitHub                         | Team                  | Consumed by      |
+| ---------------------- | ------------------------------ | --------------------- | ---------------- |
+| `movie-finder-backend` | `aharbii/movie-finder-backend` | App / Backend         | end users        |
+| `movie-finder-chain`   | `aharbii/movie-finder-chain`   | AI Engineering        | backend app      |
+| `imdbapi-client`       | `aharbii/imdbapi-client`       | IMDb API              | chain            |
+| `movie-finder-rag`     | `aharbii/movie-finder-rag`     | AI / Data Engineering | chain via Qdrant |
 
 ### Dependency flow
 
@@ -124,13 +124,13 @@ The authoritative contract lives in
 
 Canonical environment variables:
 
-| Variable | Owner / usage |
-|----------|----------------|
-| `QDRANT_URL` | shared endpoint for app, chain, rag_ingestion |
-| `QDRANT_API_KEY_RO` | read-only key for app + chain |
-| `QDRANT_API_KEY_RW` | write-capable key for rag_ingestion only |
-| `QDRANT_COLLECTION_NAME` | shared collection name |
-| `KAGGLE_API_TOKEN` | rag_ingestion only |
+| Variable                 | Owner / usage                                 |
+| ------------------------ | --------------------------------------------- |
+| `QDRANT_URL`             | shared endpoint for app, chain, rag_ingestion |
+| `QDRANT_API_KEY_RO`      | read-only key for app + chain                 |
+| `QDRANT_API_KEY_RW`      | write-capable key for rag_ingestion only      |
+| `QDRANT_COLLECTION_NAME` | shared collection name                        |
+| `KAGGLE_API_TOKEN`       | rag_ingestion only                            |
 
 Current backend-specific implications:
 
@@ -141,10 +141,10 @@ Current backend-specific implications:
 
 Current Jenkins credentials used by the backend-owned slice:
 
-| Jenkins credential ID | Canonical env var |
-|-----------------------|-------------------|
-| `qdrant-url` | `QDRANT_URL` |
-| `qdrant-api-key-ro` | `QDRANT_API_KEY_RO` |
+| Jenkins credential ID    | Canonical env var        |
+| ------------------------ | ------------------------ |
+| `qdrant-url`             | `QDRANT_URL`             |
+| `qdrant-api-key-ro`      | `QDRANT_API_KEY_RO`      |
 | `qdrant-collection-name` | `QDRANT_COLLECTION_NAME` |
 
 Do **not** reintroduce:
@@ -201,12 +201,12 @@ unreviewed child repo work.
 
 ## CI/CD overview
 
-| Pipeline | Repo | Current responsibility |
-|----------|------|------------------------|
-| `movie-finder-backend` | backend | backend app lint/typecheck/test, image build, deploy |
-| `movie-finder-chain` | chain | chain library rollout and its Docker-first update |
-| `imdbapi-client` | imdbapi | client library rollout and its Docker-first update |
-| `movie-finder-rag` | rag_ingestion | ingestion pipeline rollout and its Docker-first update |
+| Pipeline               | Repo          | Current responsibility                                 |
+| ---------------------- | ------------- | ------------------------------------------------------ |
+| `movie-finder-backend` | backend       | backend app lint/typecheck/test, image build, deploy   |
+| `movie-finder-chain`   | chain         | chain library rollout and its Docker-first update      |
+| `imdbapi-client`       | imdbapi       | client library rollout and its Docker-first update     |
+| `movie-finder-rag`     | rag_ingestion | ingestion pipeline rollout and its Docker-first update |
 
 The backend pipeline in this iteration validates the backend app slice only. The
 child repos continue landing their own repo-local changes independently.
@@ -217,17 +217,17 @@ child repos continue landing their own repo-local changes independently.
 
 See [.env.example](.env.example) for the full current template. Quick reference:
 
-| Variable | Required by |
-|----------|-------------|
-| `APP_SECRET_KEY` | backend app |
-| `DATABASE_URL` | backend app |
-| `QDRANT_URL` | app, chain, rag_ingestion |
-| `QDRANT_API_KEY_RO` | app, chain |
-| `QDRANT_API_KEY_RW` | rag_ingestion only |
-| `QDRANT_COLLECTION_NAME` | app, chain, rag_ingestion |
-| `OPENAI_API_KEY` | app via chain, rag_ingestion |
-| `ANTHROPIC_API_KEY` | app via chain |
-| `KAGGLE_API_TOKEN` | rag_ingestion only |
+| Variable                 | Required by                  |
+| ------------------------ | ---------------------------- |
+| `APP_SECRET_KEY`         | backend app                  |
+| `DATABASE_URL`           | backend app                  |
+| `QDRANT_URL`             | app, chain, rag_ingestion    |
+| `QDRANT_API_KEY_RO`      | app, chain                   |
+| `QDRANT_API_KEY_RW`      | rag_ingestion only           |
+| `QDRANT_COLLECTION_NAME` | app, chain, rag_ingestion    |
+| `OPENAI_API_KEY`         | app via chain, rag_ingestion |
+| `ANTHROPIC_API_KEY`      | app via chain                |
+| `KAGGLE_API_TOKEN`       | rag_ingestion only           |
 
 ---
 

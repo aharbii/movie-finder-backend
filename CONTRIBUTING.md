@@ -77,7 +77,7 @@ contract:
 - **Host tasks** call `make ...`
 - **Python interpreter** lives at `/opt/venv/bin/python` inside the attached
   `backend` container
-- **Code navigation** resolves `app/src`, `chain/src`, and `imdbapi/src`
+- **Code navigation** resolves `app/src`, `chain/src`, and `chain/imdbapi/src`
 - **Test Explorer** is configured for `app/tests/` only in this iteration
 
 Recommended workflow:
@@ -243,12 +243,15 @@ cadence and their own issue-owned rollout work.
 ### Updating a submodule pointer
 
 ```bash
-cd chain/   # or imdbapi/ or rag_ingestion/
+cd chain/   # or chain/imdbapi/ or rag_ingestion/
 git fetch && git checkout main && git pull
 cd ..
 git add chain/
 git commit -m "chore(chain): bump to latest main"
 ```
+
+Note: `imdbapi-client` is a submodule nested inside `chain/` (path `chain/imdbapi/`).
+To update its pointer, `cd chain/imdbapi/` and commit from `chain/`:
 
 ### After pulling backend changes that moved a submodule pointer
 

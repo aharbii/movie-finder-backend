@@ -4,13 +4,8 @@ AI-powered movie discovery and Q&A. Describe a film you half-remember, the
 system searches a Qdrant-backed movie corpus, enriches candidates with live IMDb
 data, and answers follow-up questions once you confirm the right match.
 
-This repo is the **backend integration root** for that flow. In the current
-iteration, it standardizes a **Docker-only local development workflow for the
-backend app stack**. The child repos keep their own repo-local rollout issues:
-
-- `movie-finder-chain#9`
-- `imdbapi-client#3`
-- `movie-finder-rag#13`
+This repo is the **backend integration root** — it owns the FastAPI app and
+standardizes a **Docker-only local development workflow** for the entire backend stack.
 
 ---
 
@@ -47,12 +42,12 @@ This is a **multi-repo monorepo**. The backend root integrates three
 independent child repos, but this iteration only standardizes the backend app
 workflow from the root.
 
-| Repo | Path | Team | Description |
-|------|------|------|-------------|
-| [movie-finder-backend](.) | `/` | App / Backend | FastAPI app, backend Docker contract, Jenkins pipeline |
-| [movie-finder-chain](chain/) | `chain/` | AI Engineering | LangGraph multi-agent pipeline imported by the app |
-| [imdbapi-client](imdbapi/) | `imdbapi/` | IMDb API | Async IMDb REST client imported by chain |
-| [movie-finder-rag](rag_ingestion/) | `rag_ingestion/` | AI / Data Engineering | Offline ingestion pipeline that writes to Qdrant |
+| Repo                               | Path             | Team                  | Description                                                     |
+| ---------------------------------- | ---------------- | --------------------- | --------------------------------------------------------------- |
+| [movie-finder-backend](.)          | `/`              | App / Backend         | FastAPI app, backend Docker contract, Jenkins pipeline          |
+| [movie-finder-chain](chain/)       | `chain/`         | AI Engineering        | LangGraph multi-agent pipeline imported by the app              |
+| [imdbapi-client](chain/imdbapi/)   | `chain/imdbapi/` | IMDb API              | Async IMDb REST client imported by chain (nested inside chain/) |
+| [movie-finder-rag](rag_ingestion/) | `rag_ingestion/` | AI / Data Engineering | Offline ingestion pipeline that writes to Qdrant                |
 
 ```text
 backend/
@@ -66,7 +61,7 @@ backend/
 │       ├── auth/             JWT middleware + models
 │       └── session/          PostgreSQL session store
 ├── chain/                git submodule: movie-finder-chain
-├── imdbapi/              git submodule: imdbapi-client
+│   └── imdbapi/          git submodule (nested): imdbapi-client
 ├── rag_ingestion/        git submodule: movie-finder-rag
 ├── docker/
 │   └── postgres/init/    bootstrap SQL for the local test database
@@ -85,14 +80,13 @@ backend/
 
 ## Prerequisites
 
-| Tool | Version | Install |
-|------|---------|---------|
-| Docker | 24+ | [docs.docker.com](https://docs.docker.com/get-docker/) |
-| git | 2.20+ | system package manager |
-| make | recent | build tools / Xcode CLT / GNU Make package |
+| Tool   | Version | Install                                                |
+| ------ | ------- | ------------------------------------------------------ |
+| Docker | 24+     | [docs.docker.com](https://docs.docker.com/get-docker/) |
+| git    | 2.20+   | system package manager                                 |
+| make   | recent  | build tools / Xcode CLT / GNU Make package             |
 
-You do **not** need a host `.venv`, host `uv sync`, or host `fastapi dev` for
-the backend-root workflow in this iteration.
+You do **not** need a host `.venv`, host `uv sync`, or host `fastapi dev`.
 
 ---
 
@@ -160,9 +154,8 @@ make pre-commit     # full hook suite (also enforced on git commit)
 make check          # lint + typecheck + test-coverage (CI gate)
 ```
 
-All supported root-level developer workflows go through Docker. The child repos
-will adopt the same target naming in their own repos as their issues land; this
-root repo does not proxy their standalone lint/test/build surfaces yet.
+All supported developer workflows go through Docker. To run quality checks for a
+child repo (chain, imdbapi, rag_ingestion), use `make` from within that directory.
 
 ---
 
@@ -189,7 +182,7 @@ Editor intelligence is configured to resolve:
 
 - `app/src`
 - `chain/src`
-- `imdbapi/src`
+- `chain/imdbapi/src`
 
 That gives backend developers navigation across the imported libraries without
 taking over the child repos' own debug/task surfaces prematurely.
@@ -206,18 +199,18 @@ For coverage visualization:
 The authoritative secret contract lives in
 [`../infrastructure/docs/qdrant-secret-model.md`](../infrastructure/docs/qdrant-secret-model.md).
 
-| Variable | Used by | Secret source / notes |
-|----------|---------|-----------------------|
-| `APP_SECRET_KEY` | backend app | Azure Key Vault: `app-secret-key` |
-| `DATABASE_URL` | backend app | Azure Key Vault: `postgres-url` |
-| `QDRANT_URL` | app, chain, rag_ingestion | Azure Key Vault / Jenkins: `qdrant-url` |
-| `QDRANT_API_KEY_RO` | app, chain | Azure Key Vault / Jenkins: `qdrant-api-key-ro` |
-| `QDRANT_COLLECTION_NAME` | app, chain, rag_ingestion | Azure Key Vault / Jenkins: `qdrant-collection-name` |
-| `QDRANT_API_KEY_RW` | rag_ingestion only | documented here for cross-repo alignment; not injected into the backend app container |
-| `KAGGLE_API_TOKEN` | rag_ingestion only | documented here for cross-repo alignment; not used by the backend app stack |
-| `ANTHROPIC_API_KEY` | app via chain | Azure Key Vault: `anthropic-api-key` |
-| `OPENAI_API_KEY` | app via chain | Azure Key Vault: `openai-api-key` |
-| `LANGSMITH_API_KEY` | optional tracing | Azure Key Vault: `langsmith-api-key` |
+| Variable                 | Used by                   | Secret source / notes                                                                 |
+| ------------------------ | ------------------------- | ------------------------------------------------------------------------------------- |
+| `APP_SECRET_KEY`         | backend app               | Azure Key Vault: `app-secret-key`                                                     |
+| `DATABASE_URL`           | backend app               | Azure Key Vault: `postgres-url`                                                       |
+| `QDRANT_URL`             | app, chain, rag_ingestion | Azure Key Vault / Jenkins: `qdrant-url`                                               |
+| `QDRANT_API_KEY_RO`      | app, chain                | Azure Key Vault / Jenkins: `qdrant-api-key-ro`                                        |
+| `QDRANT_COLLECTION_NAME` | app, chain, rag_ingestion | Azure Key Vault / Jenkins: `qdrant-collection-name`                                   |
+| `QDRANT_API_KEY_RW`      | rag_ingestion only        | documented here for cross-repo alignment; not injected into the backend app container |
+| `KAGGLE_API_TOKEN`       | rag_ingestion only        | documented here for cross-repo alignment; not used by the backend app stack           |
+| `ANTHROPIC_API_KEY`      | app via chain             | Azure Key Vault: `anthropic-api-key`                                                  |
+| `OPENAI_API_KEY`         | app via chain             | Azure Key Vault: `openai-api-key`                                                     |
+| `LANGSMITH_API_KEY`      | optional tracing          | Azure Key Vault: `langsmith-api-key`                                                  |
 
 Do **not** reintroduce the legacy names `QDRANT_ENDPOINT`, `QDRANT_API_KEY`, or
 `QDRANT_COLLECTION` to `.env.example`. The backend compose file exports them
@@ -229,9 +222,9 @@ internally only as a temporary compatibility bridge until `movie-finder-chain#9`
 
 The backend uses two distinct data systems:
 
-| Store | Technology | Purpose |
-|-------|------------|---------|
-| Vector store | **Qdrant Cloud** | semantic movie search |
+| Store         | Technology        | Purpose                       |
+| ------------- | ----------------- | ----------------------------- |
+| Vector store  | **Qdrant Cloud**  | semantic movie search         |
 | Relational DB | **PostgreSQL 16** | users, sessions, chat history |
 
 Qdrant is always external. There is no supported local Qdrant container in this
@@ -239,11 +232,11 @@ repo anymore.
 
 The backend app exposes:
 
-| Path | Purpose |
-|------|---------|
-| `/health` | backwards-compatible liveness alias |
-| `/health/live` | container liveness probe |
-| `/health/ready` | database readiness probe |
+| Path            | Purpose                             |
+| --------------- | ----------------------------------- |
+| `/health`       | backwards-compatible liveness alias |
+| `/health/live`  | container liveness probe            |
+| `/health/ready` | database readiness probe            |
 
 Local tests use a dedicated `movie_finder_test` database created by
 `docker/postgres/init/01-create-test-database.sql`.
@@ -252,26 +245,18 @@ Local tests use a dedicated `movie_finder_test` database created by
 
 ## Working on a specific subproject
 
-- **App / backend integration work**
-  Start here: [app/README.md](app/README.md), [CONTRIBUTING.md](CONTRIBUTING.md)
-- **Chain repo-local work**
-  Use `movie-finder-chain` docs and issue `movie-finder-chain#9`
-- **IMDb client repo-local work**
-  Use `imdbapi-client` docs and issue `imdbapi-client#3`
-- **RAG repo-local work**
-  Use `movie-finder-rag` docs and issue `movie-finder-rag#13`
-
-This distinction is important for the current iteration: the backend root now
-owns the app Docker contract, but it does not yet replace each child repo's own
-developer surface.
+| Area                      | Start here                                                                                                          |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| App / backend integration | [app/README.md](app/README.md) → [CONTRIBUTING.md](CONTRIBUTING.md)                                                 |
+| LangGraph chain           | [chain/README.md](chain/README.md) → [chain/CONTRIBUTING.md](chain/CONTRIBUTING.md)                                 |
+| IMDb API client           | [chain/imdbapi/README.md](chain/imdbapi/README.md) → [chain/imdbapi/CONTRIBUTING.md](chain/imdbapi/CONTRIBUTING.md) |
+| RAG ingestion             | [rag_ingestion/README.md](rag_ingestion/README.md) → [rag_ingestion/CONTRIBUTING.md](rag_ingestion/CONTRIBUTING.md) |
 
 ---
 
 ## CI/CD
 
-The backend pipeline lives in [Jenkinsfile](Jenkinsfile). In this iteration it
-aligns with the backend-owned Docker contract and the new Qdrant secret names,
-while the child repos continue landing their own repo-local Docker updates.
+The backend pipeline lives in [Jenkinsfile](Jenkinsfile).
 
 Build / deploy flow:
 

@@ -74,18 +74,18 @@ make down
 
 ## Environment variables
 
-| Variable | Required | Notes |
-|----------|----------|-------|
-| `APP_SECRET_KEY` | yes | JWT signing secret |
-| `DATABASE_URL` | yes | canonical runtime database URL |
-| `APP_ENV` | no | defaults to `development` |
-| `APP_PORT` | no | defaults to `8000` |
-| `QDRANT_URL` | yes | canonical Qdrant endpoint |
-| `QDRANT_API_KEY_RO` | yes | read-only key for app + chain |
-| `QDRANT_COLLECTION_NAME` | yes | shared collection identifier |
-| `ANTHROPIC_API_KEY` | yes | required by the imported chain library |
-| `OPENAI_API_KEY` | yes | required by the imported chain library |
-| `LANGSMITH_*` | no | optional tracing |
+| Variable                 | Required | Notes                                  |
+| ------------------------ | -------- | -------------------------------------- |
+| `APP_SECRET_KEY`         | yes      | JWT signing secret                     |
+| `DATABASE_URL`           | yes      | canonical runtime database URL         |
+| `APP_ENV`                | no       | defaults to `development`              |
+| `APP_PORT`               | no       | defaults to `8000`                     |
+| `QDRANT_URL`             | yes      | canonical Qdrant endpoint              |
+| `QDRANT_API_KEY_RO`      | yes      | read-only key for app + chain          |
+| `QDRANT_COLLECTION_NAME` | yes      | shared collection identifier           |
+| `ANTHROPIC_API_KEY`      | yes      | required by the imported chain library |
+| `OPENAI_API_KEY`         | yes      | required by the imported chain library |
+| `LANGSMITH_*`            | no       | optional tracing                       |
 
 The full cross-repo contract is documented in [../.env.example](../.env.example).
 
@@ -93,10 +93,10 @@ The full cross-repo contract is documented in [../.env.example](../.env.example)
 
 ## Health endpoints
 
-| Path | Purpose |
-|------|---------|
-| `/health` | backwards-compatible liveness alias |
-| `/health/live` | container liveness probe |
+| Path            | Purpose                                         |
+| --------------- | ----------------------------------------------- |
+| `/health`       | backwards-compatible liveness alias             |
+| `/health/live`  | container liveness probe                        |
 | `/health/ready` | readiness probe that verifies the database pool |
 
 `/health/ready` calls `SessionStore.ping()` and returns `503` if the database

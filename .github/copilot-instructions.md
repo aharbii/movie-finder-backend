@@ -10,16 +10,16 @@ Parent project: `aharbii/movie-finder` — create cross-repo tracker issues ther
 
 ## Repo structure
 
-| Path | Role |
-|---|---|
-| `app/` | FastAPI routes, auth (JWT), SSE streaming, PostgreSQL via asyncpg |
-| `chain/` | LangGraph AI pipeline (submodule → `aharbii/movie-finder-chain`) |
-| `imdbapi/` | Async IMDb REST client (submodule → `aharbii/imdbapi-client`) |
-| `rag_ingestion/` | Offline embedding ingestion (submodule → `aharbii/movie-finder-rag`) |
-| `Makefile` | Docker-only backend app targets: `init`, `up`, `down`, `ci-down`, `editor-up`, `editor-down`, `logs`, `shell`, `lint`, `format`, `typecheck`, `test`, `test-coverage`, `pre-commit` |
-| `docker-compose.yml` | backend app local stack (`postgres` + `backend`) |
-| `Dockerfile` | dev + runtime images |
-| `Jenkinsfile` | backend pipeline |
+| Path                 | Role                                                                                                                                                                                |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `app/`               | FastAPI routes, auth (JWT), SSE streaming, PostgreSQL via asyncpg                                                                                                                   |
+| `chain/`             | LangGraph AI pipeline (submodule → `aharbii/movie-finder-chain`)                                                                                                                    |
+| `imdbapi/`           | Async IMDb REST client (submodule → `aharbii/imdbapi-client`)                                                                                                                       |
+| `rag_ingestion/`     | Offline embedding ingestion (submodule → `aharbii/movie-finder-rag`)                                                                                                                |
+| `Makefile`           | Docker-only backend app targets: `init`, `up`, `down`, `ci-down`, `editor-up`, `editor-down`, `logs`, `shell`, `lint`, `format`, `typecheck`, `test`, `test-coverage`, `pre-commit` |
+| `docker-compose.yml` | backend app local stack (`postgres` + `backend`)                                                                                                                                    |
+| `Dockerfile`         | dev + runtime images                                                                                                                                                                |
+| `Jenkinsfile`        | backend pipeline                                                                                                                                                                    |
 
 `rag_ingestion/` is a standalone child repo and is intentionally excluded from
 the backend dev image in this iteration.
@@ -41,12 +41,12 @@ the backend dev image in this iteration.
 
 ## Design patterns — follow these
 
-| Pattern | Where | Rule |
-|---|---|---|
-| **Dependency injection** | `app/` routes | `Depends()` for db pool, auth, config, graph |
-| **Repository** | Database layer | No raw SQL in route handlers |
-| **Configuration object** | All packages | Settings live in `config.py` / Pydantic `BaseSettings` |
-| **SSE proxy** | `app/routers/chat.py` | Route streams events; business logic stays in `chain/` |
+| Pattern                  | Where                 | Rule                                                   |
+| ------------------------ | --------------------- | ------------------------------------------------------ |
+| **Dependency injection** | `app/` routes         | `Depends()` for db pool, auth, config, graph           |
+| **Repository**           | Database layer        | No raw SQL in route handlers                           |
+| **Configuration object** | All packages          | Settings live in `config.py` / Pydantic `BaseSettings` |
+| **SSE proxy**            | `app/routers/chat.py` | Route streams events; business logic stays in `chain/` |
 
 ---
 
@@ -65,13 +65,13 @@ or handoff as an issue comment instead of silently expanding scope.
 
 ### Known open issues (architectural gaps)
 
-| ID | Title | Status / Note |
-|---|---|---|
-| #2 | `MemorySaver` non-persistent | Chat history reset on container restart |
-| #3 | No Alembic migrations | DB schema defined as raw SQL in `store.py` |
-| #4 | No rate limiting | Middleware gap — open for implementation |
-| #9 | No CORS configuration | Defaulting to origin-only; needs SPA alignment |
-| #12 | `UserInDB` exposes hash | Security refinement — exclude `hashed_password` from Pydantic output |
+| ID  | Title                        | Status / Note                                                        |
+| --- | ---------------------------- | -------------------------------------------------------------------- |
+| #2  | `MemorySaver` non-persistent | Chat history reset on container restart                              |
+| #3  | No Alembic migrations        | DB schema defined as raw SQL in `store.py`                           |
+| #4  | No rate limiting             | Middleware gap — open for implementation                             |
+| #9  | No CORS configuration        | Defaulting to origin-only; needs SPA alignment                       |
+| #12 | `UserInDB` exposes hash      | Security refinement — exclude `hashed_password` from Pydantic output |
 
 ---
 

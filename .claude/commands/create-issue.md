@@ -21,11 +21,11 @@ Understand what the backend issue requires from its sub-submodules.
 
 ## Step 2 — Identify which sub-submodules need issues
 
-| Area | Repo |
-|---|---|
+| Area                  | Repo                         |
+| --------------------- | ---------------------------- |
 | LangGraph AI pipeline | `aharbii/movie-finder-chain` |
-| IMDb REST client | `aharbii/imdbapi-client` |
-| RAG ingestion | `aharbii/movie-finder-rag` |
+| IMDb REST client      | `aharbii/imdbapi-client`     |
+| RAG ingestion         | `aharbii/movie-finder-rag`   |
 
 Create child issues only in repos whose files will change.
 

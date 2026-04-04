@@ -6,10 +6,10 @@ Shared reference for AI agents working in this repo standalone.
 
 Open `backend/` as your workspace, then type `/`:
 
-| Command | Usage |
-|---|---|
-| `/implement [issue-number]` | Implement a child issue from this repo |
-| `/review-pr [pr-number]` | Review a PR in this repo |
+| Command                       | Usage                                   |
+| ----------------------------- | --------------------------------------- |
+| `/implement [issue-number]`   | Implement a child issue from this repo  |
+| `/review-pr [pr-number]`      | Review a PR in this repo                |
 | `/create-issue [description]` | Create sub-issues for chain/imdbapi/rag |
 
 ## Prompts (Codex CLI / Gemini CLI / Ollama)
@@ -18,6 +18,7 @@ Open `backend/` as your workspace, then type `/`:
 - `ai-context/prompts/review-pr.md` — review workflow
 
 Usage:
+
 ```bash
 cat ai-context/prompts/implement.md   # read the prompt
 gh pr diff N --repo aharbii/movie-finder-backend > /tmp/pr.txt

@@ -48,6 +48,7 @@ git checkout -b [type]/[kebab-case-title]
 ## Step 5 — Implement
 
 Follow the acceptance criteria. Backend standards:
+
 - Type annotations required on all public functions and methods
 - `mypy --strict` must pass
 - Line length ≤ 100 chars
@@ -114,18 +115,21 @@ EOF
 ## Step 9 — Cross-cutting comments
 
 For each issue in the Agent Briefing's "Related issues" list:
+
 ```bash
 gh issue comment [NUMBER] --repo [REPO] \
   --body "PR aharbii/movie-finder-backend#[PR] may affect this issue: [PR_URL]"
 ```
 
 Comment on the child issue:
+
 ```bash
 gh issue comment $ARGUMENTS --repo aharbii/movie-finder-backend \
   --body "Implemented in PR #[PR]: [PR_URL]"
 ```
 
 Comment on the parent issue:
+
 ```bash
 gh issue comment [PARENT] --repo aharbii/movie-finder \
   --body "Child work completed in aharbii/movie-finder-backend#[PR]: [PR_URL]"
