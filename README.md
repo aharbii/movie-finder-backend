@@ -133,6 +133,12 @@ Database migrations run automatically during backend container startup via
 `alembic upgrade head`. Manual migration operations are Docker-backed through
 `make` targets only.
 
+The backend app also owns the production LangGraph checkpointer lifecycle.
+During startup it creates one shared saver from `DATABASE_URL`, injects it into
+the singleton graph, and closes it on shutdown. In deployed environments,
+`DATABASE_URL` is therefore part of both the session-store and persistent
+checkpoint contract.
+
 ---
 
 ## Common development commands
@@ -217,7 +223,7 @@ The authoritative secret contract lives in
 | Variable                 | Used by                   | Secret source / notes                                                                 |
 | ------------------------ | ------------------------- | ------------------------------------------------------------------------------------- |
 | `APP_SECRET_KEY`         | backend app               | Azure Key Vault: `app-secret-key`                                                     |
-| `DATABASE_URL`           | backend app               | Azure Key Vault: `postgres-url`                                                       |
+| `DATABASE_URL`           | backend app, chain saver  | Azure Key Vault: `postgres-url`; required for persistent LangGraph checkpoints        |
 | `QDRANT_URL`             | app, chain, rag_ingestion | Azure Key Vault / Jenkins: `qdrant-url`                                               |
 | `QDRANT_API_KEY_RO`      | app, chain                | Azure Key Vault / Jenkins: `qdrant-api-key-ro`                                        |
 | `QDRANT_COLLECTION_NAME` | app, chain, rag_ingestion | Azure Key Vault / Jenkins: `qdrant-collection-name`                                   |
@@ -227,10 +233,10 @@ The authoritative secret contract lives in
 | `OPENAI_API_KEY`         | app via chain             | Azure Key Vault: `openai-api-key`                                                     |
 | `LANGSMITH_API_KEY`      | optional tracing          | Azure Key Vault: `langsmith-api-key`                                                  |
 | `CORS_ORIGINS`           | backend app               | JSON array of allowed browser origins; never use `"*"` in production                  |
-| `GLOBAL_RATE_LIMIT`      | backend app               | SlowAPI fallback limit for all routes                                                  |
-| `AUTH_RATE_LIMIT`        | backend app               | SlowAPI limit for login/token route                                                    |
-| `CHAT_RATE_LIMIT`        | backend app               | SlowAPI limit for `/chat` requests                                                     |
-| `MAX_MESSAGE_LENGTH`     | backend app               | Max accepted user message length before FastAPI returns 422                            |
+| `GLOBAL_RATE_LIMIT`      | backend app               | SlowAPI fallback limit for all routes                                                 |
+| `AUTH_RATE_LIMIT`        | backend app               | SlowAPI limit for login/token route                                                   |
+| `CHAT_RATE_LIMIT`        | backend app               | SlowAPI limit for `/chat` requests                                                    |
+| `MAX_MESSAGE_LENGTH`     | backend app               | Max accepted user message length before FastAPI returns 422                           |
 
 Do **not** reintroduce the legacy names `QDRANT_ENDPOINT`, `QDRANT_API_KEY`, or
 `QDRANT_COLLECTION` to `.env.example`. The backend compose file exports them

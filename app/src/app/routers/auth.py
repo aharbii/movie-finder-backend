@@ -15,7 +15,7 @@ from app.auth.middleware import (
 )
 from app.auth.models import RefreshRequest, Token, UserCreate, UserLogin
 from app.dependencies import get_store
-from app.limiting import auth_rate_limit, limiter
+from app.limiting import auth_rate_limit, typed_limit
 from app.session.store import SessionStore
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -46,7 +46,7 @@ async def register(
 
 @router.post("/login", response_model=Token)
 @router.post("/token", response_model=Token, include_in_schema=False)
-@limiter.limit(auth_rate_limit)  # type: ignore[untyped-decorator]
+@typed_limit(auth_rate_limit)
 async def login(
     request: Request,
     body: UserLogin,

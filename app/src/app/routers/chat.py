@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.config import get_config
 from app.dependencies import get_current_user, get_graph, get_store
-from app.limiting import chat_limit_key, chat_rate_limit, limiter
+from app.limiting import chat_limit_key, chat_rate_limit, typed_limit
 from app.models.user import UserOut
 from app.session.store import SessionStore
 
@@ -175,7 +175,7 @@ async def list_sessions(
 
 
 @router.post("")
-@limiter.limit(chat_rate_limit, key_func=chat_limit_key)  # type: ignore[untyped-decorator]
+@typed_limit(chat_rate_limit, key_func=chat_limit_key)
 async def chat(
     request: Request,
     body: ChatRequest,
