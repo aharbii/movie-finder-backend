@@ -6,13 +6,15 @@ import json
 from collections.abc import AsyncGenerator
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import StreamingResponse
 from langchain_core.messages import AIMessage, HumanMessage
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
-from app.auth.models import UserInDB
+from app.config import get_config
 from app.dependencies import get_current_user, get_graph, get_store
+from app.limiting import chat_limit_key, chat_rate_limit, limiter
+from app.models.user import UserOut
 from app.session.store import SessionStore
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -46,7 +48,16 @@ def _message_text(msg: Any) -> str:
 
 class ChatRequest(BaseModel):
     session_id: str
-    message: str
+    message: str = Field(min_length=1)
+
+    @field_validator("message")
+    @classmethod
+    def validate_message_length(cls, value: str) -> str:
+        """Reject chat messages that exceed the configured maximum length."""
+        max_length = get_config().max_message_length
+        if len(value) > max_length:
+            raise ValueError(f"String should have at most {max_length} characters")
+        return value
 
 
 class SessionSummary(BaseModel):
@@ -55,6 +66,13 @@ class SessionSummary(BaseModel):
     updated_at: str
     first_message: str | None = None
     confirmed_movie: dict[str, Any] | None = None
+
+
+class SessionPage(BaseModel):
+    total: int
+    limit: int
+    offset: int
+    items: list[SessionSummary]
 
 
 # ---------------------------------------------------------------------------
@@ -146,18 +164,22 @@ async def _stream_reply(
 
 @router.get("/sessions")
 async def list_sessions(
-    current_user: Annotated[UserInDB, Depends(get_current_user)],
+    current_user: Annotated[UserOut, Depends(get_current_user)],
     store: Annotated[SessionStore, Depends(get_store)],
-) -> list[SessionSummary]:
-    """Return all chat sessions for the authenticated user, newest first."""
-    rows = await store.get_sessions(current_user.id)
-    return [SessionSummary(**row) for row in rows]
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+) -> SessionPage:
+    """Return paginated chat sessions for the authenticated user, newest first."""
+    page = await store.get_sessions(current_user.id, limit=limit, offset=offset)
+    return SessionPage(**page)
 
 
 @router.post("")
+@limiter.limit(chat_rate_limit, key_func=chat_limit_key)  # type: ignore[untyped-decorator]
 async def chat(
+    request: Request,
     body: ChatRequest,
-    current_user: Annotated[UserInDB, Depends(get_current_user)],
+    current_user: Annotated[UserOut, Depends(get_current_user)],
     store: Annotated[SessionStore, Depends(get_store)],
     graph: Annotated[Any, Depends(get_graph)],
 ) -> StreamingResponse:
@@ -177,7 +199,7 @@ async def chat(
 @router.get("/{session_id}/history")
 async def get_history(
     session_id: str,
-    current_user: Annotated[UserInDB, Depends(get_current_user)],
+    current_user: Annotated[UserOut, Depends(get_current_user)],
     store: Annotated[SessionStore, Depends(get_store)],
 ) -> dict[str, Any]:
     """Return the full message history for a session owned by the current user."""
@@ -197,7 +219,7 @@ async def get_history(
 @router.delete("/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_session(
     session_id: str,
-    current_user: Annotated[UserInDB, Depends(get_current_user)],
+    current_user: Annotated[UserOut, Depends(get_current_user)],
     store: Annotated[SessionStore, Depends(get_store)],
 ) -> Response:
     """Delete a session and all its messages. Only the owner may delete."""

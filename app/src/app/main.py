@@ -11,19 +11,41 @@ from contextlib import asynccontextmanager
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.requests import Request
+from fastapi.responses import JSONResponse
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 from app.config import get_config
 from app.dependencies import get_store, set_graph, set_store
+from app.limiting import limiter
 from app.routers import auth, chat
 from app.session.store import SessionStore
 from chain import compile_graph
 from chain.utils.logger import get_logger
 
 logger = get_logger(__name__)
+cfg = get_config()
+
+
+def _retry_after_value(exc: RateLimitExceeded) -> str:
+    limit = getattr(exc, "limit", None)
+    if limit is not None and hasattr(limit, "get_expiry"):
+        return str(int(limit.get_expiry()))
+    return "60"
+
+
+async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
+    """Return a JSON 429 response with Retry-After metadata."""
+    response = JSONResponse(status_code=429, content={"detail": "Rate limit exceeded"})
+    response.headers["Retry-After"] = _retry_after_value(exc)
+    return response
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Initialize application singletons for the lifetime of the process."""
     cfg = get_config()
     logger.info("Starting Movie Finder API [env=%s port=%d]", cfg.app_env, cfg.app_port)
 
@@ -51,6 +73,16 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cfg.cors_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["Authorization", "Content-Type"],
+)
+app.add_middleware(SlowAPIMiddleware)
 app.include_router(auth.router)
 app.include_router(chat.router)
 

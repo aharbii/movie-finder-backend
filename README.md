@@ -129,6 +129,10 @@ Minimum values you must fill in before startup:
 
 Use `make down` when you are done.
 
+Database migrations run automatically during backend container startup via
+`alembic upgrade head`. Manual migration operations are Docker-backed through
+`make` targets only.
+
 ---
 
 ## Common development commands
@@ -152,10 +156,21 @@ make test           # pytest app/tests/
 make test-coverage  # pytest + coverage XML/HTML + JUnit for app/
 make pre-commit     # full hook suite (also enforced on git commit)
 make check          # lint + typecheck + test-coverage (CI gate)
+
+make db-upgrade                     # alembic upgrade head inside Docker
+make db-downgrade DB_REVISION=-1    # alembic downgrade inside Docker
+make db-current                     # show current alembic revision
+make db-history                     # show migration history
+make db-revision MESSAGE=add_index  # create a new empty revision
+make lock                           # refresh uv.lock inside Docker
 ```
 
 All supported developer workflows go through Docker. To run quality checks for a
 child repo (chain, imdbapi, rag_ingestion), use `make` from within that directory.
+
+When you add a new migration, create it with `make db-revision MESSAGE=...`,
+edit the generated file under [`alembic/versions`](/home/aharbi/workset/movie-finder/backend/alembic/versions),
+then apply it with `make db-upgrade`.
 
 ---
 
@@ -211,6 +226,11 @@ The authoritative secret contract lives in
 | `ANTHROPIC_API_KEY`      | app via chain             | Azure Key Vault: `anthropic-api-key`                                                  |
 | `OPENAI_API_KEY`         | app via chain             | Azure Key Vault: `openai-api-key`                                                     |
 | `LANGSMITH_API_KEY`      | optional tracing          | Azure Key Vault: `langsmith-api-key`                                                  |
+| `CORS_ORIGINS`           | backend app               | JSON array of allowed browser origins; never use `"*"` in production                  |
+| `GLOBAL_RATE_LIMIT`      | backend app               | SlowAPI fallback limit for all routes                                                  |
+| `AUTH_RATE_LIMIT`        | backend app               | SlowAPI limit for login/token route                                                    |
+| `CHAT_RATE_LIMIT`        | backend app               | SlowAPI limit for `/chat` requests                                                     |
+| `MAX_MESSAGE_LENGTH`     | backend app               | Max accepted user message length before FastAPI returns 422                            |
 
 Do **not** reintroduce the legacy names `QDRANT_ENDPOINT`, `QDRANT_API_KEY`, or
 `QDRANT_COLLECTION` to `.env.example`. The backend compose file exports them

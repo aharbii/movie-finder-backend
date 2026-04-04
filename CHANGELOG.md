@@ -13,6 +13,9 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - Docker-only backend-root coverage workflow via `make test-coverage`
 - Local postgres bootstrap SQL for the dedicated `movie_finder_test` database
 - `/health/live` and `/health/ready` probes for container liveness and database readiness
+- Alembic migration workflow and Docker-backed database Make targets
+- Refresh-token logout and revocation support
+- Route-level rate limiting, CORS configuration, and chat message length validation
 
 ### Changed
 
@@ -20,6 +23,8 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - Restored detailed inline guidance across the backend docs, scripts, VS Code config, and agent instruction files
 - Updated Jenkins and Azure provisioning to the canonical Qdrant secret names from the infrastructure contract
 - Clarified that child repo standalone workflows remain owned by their own issues in this iteration
+- Replaced raw startup DDL with migrated PostgreSQL schema using UUID, TIMESTAMPTZ, JSONB, and supporting indexes
+- Paginated `/chat/sessions` responses and narrowed authenticated route user objects to `UserOut`
 
 ---
 

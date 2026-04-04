@@ -55,6 +55,21 @@ make test-coverage
 make pre-commit
 ```
 
+Supported root-level database commands:
+
+```bash
+make db-upgrade                     # apply migrations inside Docker
+make db-downgrade DB_REVISION=-1    # roll back inside Docker
+make db-current                     # show current revision
+make db-history                     # show migration history
+make db-revision MESSAGE=add_index  # create a new empty revision
+make lock                           # refresh uv.lock inside Docker
+```
+
+Backend startup runs `alembic upgrade head` automatically. If you introduce a
+new schema change, create and apply it through the Docker-backed `make` targets
+instead of running Alembic directly on the host.
+
 Use `make editor-down` or `make down` to stop the local containers.
 
 ### What is intentionally not part of this root setup yet

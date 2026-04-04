@@ -52,6 +52,8 @@ COPY pyproject.toml uv.lock README.md ./
 COPY chain/pyproject.toml chain/README.md ./chain/
 COPY chain/imdbapi/pyproject.toml chain/imdbapi/README.md ./chain/imdbapi/
 COPY app/pyproject.toml app/README.md ./app/
+COPY alembic.ini ./
+COPY alembic ./alembic/
 
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --all-packages --all-groups --active --no-install-workspace
@@ -65,10 +67,12 @@ FROM uv-base AS builder
 WORKDIR /build
 
 # Copy workspace manifests and lock file first for layer caching.
-COPY pyproject.toml uv.lock ./
-COPY chain/pyproject.toml ./chain/
-COPY chain/imdbapi/pyproject.toml ./chain/imdbapi/
-COPY app/pyproject.toml ./app/
+COPY pyproject.toml uv.lock README.md ./
+COPY chain/pyproject.toml chain/README.md ./chain/
+COPY chain/imdbapi/pyproject.toml chain/imdbapi/README.md ./chain/imdbapi/
+COPY app/pyproject.toml app/README.md ./app/
+COPY alembic.ini ./
+COPY alembic ./alembic/
 
 # Install production dependencies for all workspace members into an isolated
 # virtualenv. The runtime stage copies this venv directly.
@@ -79,6 +83,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 COPY chain/src ./chain/src
 COPY chain/imdbapi/src ./chain/imdbapi/src
 COPY app/src ./app/src
+COPY scripts/start-backend.sh ./scripts/start-backend.sh
 
 
 # ---- Stage 3: runtime -------------------------------------------------------
@@ -98,13 +103,16 @@ COPY --link --from=builder /build/.venv /app/.venv
 COPY --link --from=builder /build/app/src ./src
 COPY --link --from=builder /build/chain/src ./chain_src
 COPY --link --from=builder /build/chain/imdbapi/src ./imdbapi_src
+COPY --link --from=builder /build/alembic.ini ./alembic.ini
+COPY --link --from=builder /build/alembic ./alembic
+COPY --link --from=builder /build/scripts/start-backend.sh ./start-backend.sh
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PATH="/app/.venv/bin:$PATH" \
     PYTHONPATH="/app/src:/app/chain_src:/app/imdbapi_src"
 
-RUN mkdir -p /app/logs && chown appuser /app/logs
+RUN mkdir -p /app/logs && chown appuser /app/logs && chmod +x /app/start-backend.sh
 
 USER appuser
 
@@ -117,6 +125,6 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/live', timeout=3)" \
     || exit 1
 
-CMD ["python", "-m", "uvicorn", "app.main:app", \
+CMD ["/app/start-backend.sh", "python", "-m", "uvicorn", "app.main:app", \
     "--host", "0.0.0.0", "--port", "8000", \
     "--workers", "1"]

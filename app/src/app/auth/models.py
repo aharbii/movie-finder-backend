@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from pydantic import BaseModel, EmailStr, Field
 
 
@@ -36,6 +38,8 @@ class Token(BaseModel):
 class TokenData(BaseModel):
     user_id: str
     token_type: str  # "access" | "refresh"
+    jti: str | None = None
+    expires_at: datetime | None = None
 
 
 class RefreshRequest(BaseModel):

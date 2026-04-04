@@ -24,7 +24,7 @@
 
 .PHONY: help init up down logs shell lint format fix typecheck test test-coverage \
         pre-commit build run run-dev setup check editor-up editor-down ci-down detect-secrets \
-        clean clean-docker
+        db-upgrade db-downgrade db-current db-history db-revision lock clean clean-docker
 
 .DEFAULT_GOAL := help
 
@@ -43,6 +43,8 @@ DB_USER ?= movie_finder
 DB_PASSWORD ?= devpassword
 TEST_DB_NAME ?= movie_finder_test
 TEST_DATABASE_URL ?= postgresql://$(DB_USER):$(DB_PASSWORD)@postgres:5432/$(TEST_DB_NAME)
+DB_REVISION ?= head
+MESSAGE ?= describe_change
 
 SOURCE_PATHS := app/src app/tests
 COVERAGE_XML ?= coverage.xml
@@ -90,6 +92,14 @@ help:
 	@echo "    detect-secrets Run detect-secrets scan"
 	@echo "    pre-commit     Run all pre-commit hooks"
 	@echo "    check          lint + typecheck + test-coverage"
+	@echo ""
+	@echo "  Database"
+	@echo "    db-upgrade     Run Alembic upgrade inside Docker (DB_REVISION=head by default)"
+	@echo "    db-downgrade   Run Alembic downgrade inside Docker (set DB_REVISION=<target>)"
+	@echo "    db-current     Show the current Alembic revision inside Docker"
+	@echo "    db-history     Show Alembic migration history inside Docker"
+	@echo "    db-revision    Create a new empty Alembic revision inside Docker (MESSAGE=...)"
+	@echo "    lock           Refresh uv.lock inside Docker after dependency changes"
 	@echo ""
 	@echo "  Maintenance"
 	@echo "    clean          Remove __pycache__, .pytest_cache, .mypy_cache, reports (via Docker)"
@@ -187,6 +197,24 @@ pre-commit:
 	$(call exec_or_run,pre-commit run --all-files)
 
 check: lint typecheck test-coverage
+
+db-upgrade:
+	$(call exec_or_run,alembic upgrade $(DB_REVISION))
+
+db-downgrade:
+	$(call exec_or_run,alembic downgrade $(DB_REVISION))
+
+db-current:
+	$(call exec_or_run,alembic current)
+
+db-history:
+	$(call exec_or_run,alembic history)
+
+db-revision:
+	$(call exec_or_run,alembic revision -m "$(MESSAGE)")
+
+lock:
+	$(call exec_or_run,uv lock)
 
 clean:
 	@echo ">>> Removing Python cache files (via Docker)..."

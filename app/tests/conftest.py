@@ -12,14 +12,19 @@ Design:
 
 from __future__ import annotations
 
+import asyncio
 import os
 from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
+import alembic.command
+import asyncpg
 import httpx
 import pytest
+from alembic.config import Config
 from langchain_core.messages import AIMessage
 
 # Set required env vars before any app module is imported.
@@ -38,10 +43,13 @@ os.environ.setdefault(
 @pytest.fixture(autouse=True)
 async def _reset_config_cache() -> AsyncIterator[None]:
     from app.config import get_config
+    from app.limiting import limiter
 
     get_config.cache_clear()
+    _reset_rate_limit_storage(limiter)
     yield
     get_config.cache_clear()
+    _reset_rate_limit_storage(limiter)
 
 
 # ---------------------------------------------------------------------------
@@ -54,6 +62,8 @@ async def store() -> AsyncGenerator[Any]:
     from app.session.store import SessionStore
 
     db_url = os.environ["DATABASE_URL"]
+    await _reset_database_schema(db_url)
+    await asyncio.to_thread(_run_migrations, db_url)
     s = SessionStore(db_url)
     await s.connect()
 
@@ -64,6 +74,32 @@ async def store() -> AsyncGenerator[Any]:
 
     yield s
     await s.close()
+
+
+def _run_migrations(database_url: str) -> None:
+    """Apply Alembic migrations to the configured test database."""
+    root = Path(__file__).resolve().parents[2]
+    config = Config(str(root / "alembic.ini"))
+    config.set_main_option("script_location", str(root / "alembic"))
+    config.set_main_option("sqlalchemy.url", database_url)
+    alembic.command.upgrade(config, "head")
+
+
+async def _reset_database_schema(database_url: str) -> None:
+    """Drop and recreate the public schema for a clean migrated test database."""
+    connection = await asyncpg.connect(database_url)
+    try:
+        await connection.execute("DROP SCHEMA IF EXISTS public CASCADE")
+        await connection.execute("CREATE SCHEMA public")
+    finally:
+        await connection.close()
+
+
+def _reset_rate_limit_storage(limiter: Any) -> None:
+    """Clear in-memory rate-limit buckets between tests when supported."""
+    storage = getattr(limiter, "_storage", None)
+    if storage is not None and hasattr(storage, "reset"):
+        storage.reset()
 
 
 # ---------------------------------------------------------------------------
