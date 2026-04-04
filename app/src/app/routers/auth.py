@@ -30,7 +30,9 @@ def _issue_tokens(user_id: str) -> Token:
 
 
 @router.post("/register", response_model=Token, status_code=status.HTTP_201_CREATED)
+@typed_limit(auth_rate_limit)
 async def register(
+    request: Request,
     body: UserCreate,
     store: Annotated[SessionStore, Depends(get_store)],
 ) -> Token:
