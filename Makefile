@@ -76,7 +76,7 @@ help:
 	@echo "  Editor"
 	@echo "    editor-up      Start only the backend container for editing/linting"
 	@echo "    editor-down    Stop the backend container and remove compose resources"
-	@echo "    shell          Open a zsh shell in the backend container"
+	@echo "    shell          Open a bash shell in the backend container"
 	@echo ""
 	@echo "  Lifecycle"
 	@echo "    up             Start full stack (postgres + backend) in the background"
@@ -118,8 +118,6 @@ help:
 
 init:
 	@if [ ! -f .env ]; then cp .env.example .env && echo ">>> .env created from .env.example"; fi
-	@touch $(COVERAGE_XML) $(JUNIT_XML)
-	@mkdir -p $(COVERAGE_HTML)
 	$(COMPOSE) build $(SERVICE)
 	@printf '#!/bin/sh\nexec make pre-commit\n' > $(GIT_HOOKS_DIR)/pre-commit
 	@chmod +x $(GIT_HOOKS_DIR)/pre-commit
@@ -148,9 +146,9 @@ logs:
 
 shell:
 	@if $(COMPOSE) ps --services --status running 2>/dev/null | grep -qx "$(SERVICE)"; then \
-		$(COMPOSE) exec $(SERVICE) zsh; \
+		$(COMPOSE) exec $(SERVICE) bash; \
 	else \
-		$(COMPOSE) run --rm $(SERVICE) zsh; \
+		$(COMPOSE) run --rm $(SERVICE) bash; \
 	fi
 
 lint:

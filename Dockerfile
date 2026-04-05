@@ -66,6 +66,12 @@ FROM uv-base AS builder
 
 WORKDIR /build
 
+# Place the virtualenv at /app/.venv — the same absolute path used in the
+# runtime stage. This ensures console-script shebangs (e.g. #!/app/.venv/bin/python3)
+# remain valid after `COPY --from=builder /app/.venv /app/.venv`, so tools like
+# `alembic` can be executed directly from PATH in the runtime container.
+ENV UV_PROJECT_ENVIRONMENT=/app/.venv
+
 # Copy workspace manifests and lock file first for layer caching.
 COPY pyproject.toml uv.lock README.md ./
 COPY chain/pyproject.toml chain/README.md ./chain/
@@ -76,14 +82,19 @@ COPY alembic ./alembic/
 
 # Install production dependencies for all workspace members into an isolated
 # virtualenv. The runtime stage copies this venv directly.
+# --no-install-workspace: install deps of all workspace members without trying
+# to build the workspace packages themselves (source is not yet present).
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --all-packages
+    uv sync --frozen --no-dev --all-packages --no-install-workspace
 
-# Copy actual source after dependencies are cached.
+# Copy actual source and re-sync to install workspace packages as editable.
 COPY chain/src ./chain/src
 COPY chain/imdbapi/src ./chain/imdbapi/src
 COPY app/src ./app/src
 COPY scripts/start-backend.sh ./scripts/start-backend.sh
+
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev --all-packages
 
 
 # ---- Stage 3: runtime -------------------------------------------------------
@@ -94,12 +105,21 @@ LABEL org.opencontainers.image.description="Movie Finder — FastAPI + LangGraph
 
 RUN useradd --system --uid 1001 --no-create-home appuser
 
+# psycopg pure-Python fallback requires the libpq shared library.
+# libpq-binary is not in the lock file (chain/pyproject.toml psycopg[binary]
+# extra was added after uv lock was last run — regenerate uv.lock to fix that
+# long-term). This ensures psycopg can connect to PostgreSQL via the python
+# implementation until the lock file is refreshed.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq5 \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 # Copy only the pre-built venv and source tree from the builder.
 # `--link` creates independent layers that BuildKit can cache and resolve in
 # parallel — safe to use with multi-stage copies.
-COPY --link --from=builder /build/.venv /app/.venv
+COPY --link --from=builder /app/.venv /app/.venv
 COPY --link --from=builder /build/app/src ./src
 COPY --link --from=builder /build/chain/src ./chain_src
 COPY --link --from=builder /build/chain/imdbapi/src ./imdbapi_src

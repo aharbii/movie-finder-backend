@@ -149,7 +149,7 @@ make up             # start postgres + backend in the background
 make down           # stop and remove local stack
 make ci-down        # full cleanup for CI (volumes + images)
 make logs           # follow backend + postgres logs
-make shell          # open zsh shell in the running backend container
+make shell          # open bash shell in the running backend container
 
 make editor-up      # start only backend for editing/linting
 make editor-down    # stop the editor container
