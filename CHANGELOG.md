@@ -16,6 +16,13 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - Alembic migration workflow and Docker-backed database Make targets
 - Refresh-token logout and revocation support
 - Route-level rate limiting, CORS configuration, and chat message length validation
+- `app/src/app/logging_config.py` — centralised `configure_logging()` bootstrap (idempotent,
+  reads `LOG_LEVEL` / `LOG_FORMAT`, configures `app`, `chain`, `imdbapi`, `rag` namespaces,
+  suppresses noisy HTTP library loggers)
+- `LOG_FORMAT` env var documented in `.env.example` — `text` (default) or `json` for
+  Azure Monitor / structured log pipelines
+- GitHub Actions CI workflow (`.github/workflows/ci.yml`) mirroring Jenkins 1:1:
+  Lint · Typecheck · Test (all branches) + Build Image (main / tags only)
 
 ### Changed
 
@@ -25,6 +32,12 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - Clarified that child repo standalone workflows remain owned by their own issues in this iteration
 - Replaced raw startup DDL with migrated PostgreSQL schema using UUID, TIMESTAMPTZ, JSONB, and supporting indexes
 - Paginated `/chat/sessions` responses and narrowed authenticated route user objects to `UserOut`
+- `app/src/app/main.py` now calls `configure_logging()` before the FastAPI app is assembled
+- `Jenkinsfile` — renamed "Chain Coverage" label to "Backend Coverage"; added `sourceDirectories`
+  to `recordCoverage` so Jenkins can locate source files; removed Azure deploy stages (staging
+  and production deploys are now orchestrated by the root `aharbii/movie-finder` pipeline)
+- Coverage config (`pyproject.toml`) — `source = ["app/src"]` + `relative_files = true` so
+  coverage.xml emits workspace-relative paths instead of absolute Docker container paths
 
 ---
 

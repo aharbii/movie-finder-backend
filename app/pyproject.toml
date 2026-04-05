@@ -101,7 +101,8 @@ asyncio_mode = "auto"
 addopts = ["-v", "--tb=short"]
 
 [tool.coverage.run]
-source = ["."]
+source = ["src"]
+relative_files = true
 omit = ["tests/*", "*/py.typed"]
 
 [tool.coverage.report]

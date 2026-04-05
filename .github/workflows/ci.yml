@@ -1,0 +1,160 @@
+# =============================================================================
+# movie-finder-backend — GitHub Actions CI
+#
+# Mirrors the Jenkins Multibranch pipeline 1:1.
+# Both pipelines must remain in sync. Changes to build logic must be applied
+# to both Jenkinsfile and this file.
+#
+# Modes:
+#   Contribution  — PR + feature branches: Lint · Typecheck · Test
+#   Integration   — push to main / tag:    + Build and push app image to ACR
+#
+# Deploy stages are NOT present here. Staging and production deployments are
+# orchestrated by aharbii/movie-finder (root) which pulls from ACR after this
+# pipeline completes.
+#
+# Required GitHub Actions secrets (Settings → Secrets and variables → Actions):
+#   ACR_LOGIN_SERVER   Full ACR hostname, e.g. myacr.azurecr.io
+#   ACR_USERNAME       Service principal App ID (used as Docker registry username)
+#   ACR_PASSWORD       Service principal client secret
+# =============================================================================
+
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+    tags: ['v*']
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  SERVICE_NAME: movie-finder-backend
+
+jobs:
+
+  # -------------------------------------------------------------------------- #
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (recursive submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Initialize
+        run: make init
+
+      - name: Lint
+        run: make lint
+
+  # -------------------------------------------------------------------------- #
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (recursive submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Initialize
+        run: make init
+
+      - name: Typecheck
+        run: make typecheck
+
+  # -------------------------------------------------------------------------- #
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (recursive submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Initialize
+        run: make init
+
+      - name: Test with coverage
+        run: make test-coverage
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: |
+            junit.xml
+            coverage.xml
+            htmlcov/
+
+  # -------------------------------------------------------------------------- #
+  build:
+    name: Build App Image
+    needs: [lint, typecheck, test]
+    runs-on: ubuntu-latest
+    # Only build the image on main branch pushes and version tags.
+    if: >
+      github.event_name == 'push' &&
+      (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    steps:
+      - name: Checkout (recursive submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Resolve image tag
+        id: tag
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            TAG="${GITHUB_REF#refs/tags/}"
+          else
+            TAG="${GITHUB_SHA::8}"
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "full_image=${{ secrets.ACR_LOGIN_SERVER }}/${{ env.SERVICE_NAME }}:${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Docker login to ACR
+        run: |
+          echo "${{ secrets.ACR_PASSWORD }}" | \
+            docker login "${{ secrets.ACR_LOGIN_SERVER }}" \
+              -u "${{ secrets.ACR_USERNAME }}" --password-stdin
+
+      - name: Pull cache layer
+        run: |
+          docker pull "${{ secrets.ACR_LOGIN_SERVER }}/${{ env.SERVICE_NAME }}:latest" || true
+
+      - name: Build image
+        working-directory: backend
+        run: |
+          docker build \
+            --cache-from "${{ secrets.ACR_LOGIN_SERVER }}/${{ env.SERVICE_NAME }}:latest" \
+            -t "${{ steps.tag.outputs.full_image }}" \
+            .
+
+      - name: Push image
+        run: docker push "${{ steps.tag.outputs.full_image }}"
+
+      - name: Tag and push latest (main only)
+        if: github.ref == 'refs/heads/main'
+        run: |
+          LATEST="${{ secrets.ACR_LOGIN_SERVER }}/${{ env.SERVICE_NAME }}:latest"
+          docker tag "${{ steps.tag.outputs.full_image }}" "${LATEST}"
+          docker push "${LATEST}"
+
+      - name: Docker logout
+        if: always()
+        run: docker logout "${{ secrets.ACR_LOGIN_SERVER }}" || true
+
+      - name: Remove local images
+        if: always()
+        run: |
+          docker rmi "${{ steps.tag.outputs.full_image }}" || true
+          docker rmi "${{ secrets.ACR_LOGIN_SERVER }}/${{ env.SERVICE_NAME }}:latest" || true

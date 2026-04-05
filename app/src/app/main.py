@@ -20,6 +20,7 @@ from slowapi.middleware import SlowAPIMiddleware
 from app.config import get_config
 from app.dependencies import get_store, set_graph, set_store
 from app.limiting import limiter
+from app.logging_config import configure_logging
 from app.routers import auth, chat
 from app.session.store import SessionStore
 from chain import checkpoint_lifespan, compile_graph
@@ -27,6 +28,11 @@ from chain.utils.logger import get_logger
 
 if TYPE_CHECKING:
     from langgraph.checkpoint.base import BaseCheckpointSaver
+
+# Bootstrap logging before the FastAPI app is assembled and before any
+# logger.getLogger() calls below. configure_logging() is idempotent —
+# safe to call multiple times. Reads LOG_LEVEL and LOG_FORMAT from env.
+configure_logging()
 
 logger = get_logger(__name__)
 cfg = get_config()
