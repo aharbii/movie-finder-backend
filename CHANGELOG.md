@@ -22,7 +22,8 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - `LOG_FORMAT` env var documented in `.env.example` — `text` (default) or `json` for
   Azure Monitor / structured log pipelines
 - GitHub Actions CI workflow (`.github/workflows/ci.yml`) mirroring Jenkins 1:1:
-  Lint · Typecheck · Test (all branches) + Build Image (main / tags only)
+  Lint · Typecheck · Test · Coverage reporting via `EnricoMi/publish-unit-test-result-action@v2`,
+  `irongut/CodeCoverageSummary@v1.3.0`, and `marocchino/sticky-pull-request-comment@v2`
 
 ### Changed
 
@@ -33,9 +34,14 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - Replaced raw startup DDL with migrated PostgreSQL schema using UUID, TIMESTAMPTZ, JSONB, and supporting indexes
 - Paginated `/chat/sessions` responses and narrowed authenticated route user objects to `UserOut`
 - `app/src/app/main.py` now calls `configure_logging()` before the FastAPI app is assembled
-- `Jenkinsfile` — renamed "Chain Coverage" label to "Backend Coverage"; added `sourceDirectories`
-  to `recordCoverage` so Jenkins can locate source files; removed Azure deploy stages (staging
-  and production deploys are now orchestrated by the root `aharbii/movie-finder` pipeline)
+- All test outputs (`junit.xml`, `coverage.xml`, `htmlcov/`) now written to a `reports/`
+  subdirectory; `docker-compose.yml` uses a directory bind-mount (`./reports:/workspace/reports`)
+  instead of individual file bind-mounts, fixing a Docker bug where missing host files were
+  auto-created as directories causing `--junitxml must be a filename` errors
+- `Jenkinsfile` — renamed "Chain Coverage" label to "Backend Coverage"; fixed `sourceDirectories`
+  from `[[path: 'app/src']]` to `[[path: 'app']]` so Jenkins correctly resolves source file
+  paths from coverage.xml; removed Build App Image stage (image builds now orchestrated by the
+  root `aharbii/movie-finder` pipeline); updated all report paths to `reports/`
 - Coverage config (`pyproject.toml`) — `source = ["app/src"]` + `relative_files = true` so
   coverage.xml emits workspace-relative paths instead of absolute Docker container paths
 
