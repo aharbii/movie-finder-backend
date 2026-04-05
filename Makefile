@@ -174,7 +174,6 @@ test:
 	fi
 
 test-coverage:
-	@touch $(COVERAGE_XML) $(JUNIT_XML) && mkdir -p $(COVERAGE_HTML)
 	@if $(COMPOSE) ps --services --status running 2>/dev/null | grep -qx "$(SERVICE)"; then \
 		$(COMPOSE) exec -e DATABASE_URL="$(TEST_DATABASE_URL)" $(SERVICE) \
 			pytest app/tests/ --asyncio-mode=auto -v --tb=short \
