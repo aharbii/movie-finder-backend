@@ -49,9 +49,9 @@ MESSAGE ?= describe_change
 FILE ?=
 
 SOURCE_PATHS := app/src app/tests
-COVERAGE_XML ?= coverage.xml
-COVERAGE_HTML ?= htmlcov
-JUNIT_XML ?= junit.xml
+COVERAGE_XML ?= reports/coverage.xml
+COVERAGE_HTML ?= reports/htmlcov
+JUNIT_XML ?= reports/junit.xml
 
 # ---------------------------------------------------------------------------
 # exec when running, run --rm otherwise — avoids container startup overhead
@@ -176,20 +176,20 @@ test:
 test-coverage:
 	@if $(COMPOSE) ps --services --status running 2>/dev/null | grep -qx "$(SERVICE)"; then \
 		$(COMPOSE) exec -e DATABASE_URL="$(TEST_DATABASE_URL)" $(SERVICE) \
-			pytest app/tests/ --asyncio-mode=auto -v --tb=short \
+			sh -c 'mkdir -p reports && pytest app/tests/ --asyncio-mode=auto -v --tb=short \
 			--cov=app \
 			--cov-report=term-missing \
 			--cov-report=xml:$(COVERAGE_XML) \
 			--cov-report=html:$(COVERAGE_HTML) \
-			--junitxml=$(JUNIT_XML); \
+			--junitxml=$(JUNIT_XML)'; \
 	else \
 		$(COMPOSE) run --rm -e DATABASE_URL="$(TEST_DATABASE_URL)" $(SERVICE) \
-			pytest app/tests/ --asyncio-mode=auto -v --tb=short \
+			sh -c 'mkdir -p reports && pytest app/tests/ --asyncio-mode=auto -v --tb=short \
 			--cov=app \
 			--cov-report=term-missing \
 			--cov-report=xml:$(COVERAGE_XML) \
 			--cov-report=html:$(COVERAGE_HTML) \
-			--junitxml=$(JUNIT_XML); \
+			--junitxml=$(JUNIT_XML)'; \
 	fi
 
 detect-secrets:
@@ -233,9 +233,7 @@ clean:
 	$(call exec_or_run,find . -type d -name ".mypy_cache" -not -path "./.git/*" -exec rm -rf {} + 2>/dev/null || true)
 	$(call exec_or_run,find . -type d -name ".ruff_cache" -not -path "./.git/*" -exec rm -rf {} + 2>/dev/null || true)
 	$(call exec_or_run,find . -name "*.egg-info" -not -path "./.git/*" -exec rm -rf {} + 2>/dev/null || true)
-	$(call exec_or_run,find . -name "$(COVERAGE_XML)" -not -path "./.git/*" -delete 2>/dev/null || true)
-	$(call exec_or_run,find . -name "$(JUNIT_XML)" -not -path "./.git/*" -delete 2>/dev/null || true)
-	$(call exec_or_run,find . -type d -name "$(COVERAGE_HTML)" -not -path "./.git/*" -exec rm -rf {} + 2>/dev/null || true)
+	$(call exec_or_run,rm -rf reports/)
 	@echo "Clean complete."
 
 clean-docker: ci-down

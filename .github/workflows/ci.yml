@@ -5,18 +5,14 @@
 # Both pipelines must remain in sync. Changes to build logic must be applied
 # to both Jenkinsfile and this file.
 #
-# Modes:
-#   Contribution  — PR + feature branches: Lint · Typecheck · Test
-#   Integration   — push to main / tag:    + Build and push app image to ACR
+# Pipeline: Lint · Typecheck · Test
 #
-# Deploy stages are NOT present here. Staging and production deployments are
-# orchestrated by aharbii/movie-finder (root) which pulls from ACR after this
-# pipeline completes.
+# Image build and ACR push are NOT in this workflow.
+# They are handled by the root aharbii/movie-finder GitHub Actions workflow
+# after all submodule CI jobs pass, keeping build credentials out of
+# submodule repositories.
 #
-# Required GitHub Actions secrets (Settings → Secrets and variables → Actions):
-#   ACR_LOGIN_SERVER   Full ACR hostname, e.g. myacr.azurecr.io
-#   ACR_USERNAME       Service principal App ID (used as Docker registry username)
-#   ACR_PASSWORD       Service principal client secret
+# No required GitHub Actions secrets.
 # =============================================================================
 
 name: CI
@@ -31,9 +27,6 @@ on:
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
-
-env:
-  SERVICE_NAME: movie-finder-backend
 
 jobs:
 
@@ -73,6 +66,10 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
+    permissions:
+      checks: write
+      pull-requests: write
+      contents: read
     steps:
       - name: Checkout (recursive submodules)
         uses: actions/checkout@v4
@@ -85,76 +82,36 @@ jobs:
       - name: Test with coverage
         run: make test-coverage
 
-      - name: Upload test results
+      - name: Publish test results
+        if: always()
+        uses: EnricoMi/publish-unit-test-result-action@v2
+        with:
+          files: reports/junit.xml
+
+      - name: Generate coverage summary
+        if: always()
+        uses: irongut/CodeCoverageSummary@v1.3.0
+        with:
+          filename: reports/coverage.xml
+          badge: true
+          fail_below_min: false
+          format: markdown
+          hide_branch_rate: false
+          hide_complexity: true
+          indicators: true
+          output: both
+          thresholds: '10 80'
+
+      - name: Post coverage comment
+        if: always() && github.event_name == 'pull_request'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          recreate: true
+          path: code-coverage-results.md
+
+      - name: Upload test artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: test-results
-          path: |
-            junit.xml
-            coverage.xml
-            htmlcov/
-
-  # -------------------------------------------------------------------------- #
-  build:
-    name: Build App Image
-    needs: [lint, typecheck, test]
-    runs-on: ubuntu-latest
-    # Only build the image on main branch pushes and version tags.
-    if: >
-      github.event_name == 'push' &&
-      (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
-    steps:
-      - name: Checkout (recursive submodules)
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Resolve image tag
-        id: tag
-        run: |
-          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-            TAG="${GITHUB_REF#refs/tags/}"
-          else
-            TAG="${GITHUB_SHA::8}"
-          fi
-          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
-          echo "full_image=${{ secrets.ACR_LOGIN_SERVER }}/${{ env.SERVICE_NAME }}:${TAG}" >> "$GITHUB_OUTPUT"
-
-      - name: Docker login to ACR
-        run: |
-          echo "${{ secrets.ACR_PASSWORD }}" | \
-            docker login "${{ secrets.ACR_LOGIN_SERVER }}" \
-              -u "${{ secrets.ACR_USERNAME }}" --password-stdin
-
-      - name: Pull cache layer
-        run: |
-          docker pull "${{ secrets.ACR_LOGIN_SERVER }}/${{ env.SERVICE_NAME }}:latest" || true
-
-      - name: Build image
-        working-directory: backend
-        run: |
-          docker build \
-            --cache-from "${{ secrets.ACR_LOGIN_SERVER }}/${{ env.SERVICE_NAME }}:latest" \
-            -t "${{ steps.tag.outputs.full_image }}" \
-            .
-
-      - name: Push image
-        run: docker push "${{ steps.tag.outputs.full_image }}"
-
-      - name: Tag and push latest (main only)
-        if: github.ref == 'refs/heads/main'
-        run: |
-          LATEST="${{ secrets.ACR_LOGIN_SERVER }}/${{ env.SERVICE_NAME }}:latest"
-          docker tag "${{ steps.tag.outputs.full_image }}" "${LATEST}"
-          docker push "${LATEST}"
-
-      - name: Docker logout
-        if: always()
-        run: docker logout "${{ secrets.ACR_LOGIN_SERVER }}" || true
-
-      - name: Remove local images
-        if: always()
-        run: |
-          docker rmi "${{ steps.tag.outputs.full_image }}" || true
-          docker rmi "${{ secrets.ACR_LOGIN_SERVER }}/${{ env.SERVICE_NAME }}:latest" || true
+          path: reports/
