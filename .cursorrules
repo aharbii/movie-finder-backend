@@ -1,0 +1,49 @@
+# Movie Finder Backend — Cursor Rules
+
+You are working in the movie-finder-backend workspace.
+Primary reference: CLAUDE.md (loaded automatically; also valid for Cursor).
+
+## What this workspace does
+
+FastAPI backend — HTTP/SSE API layer.
+uv workspace: `app/` and `chain/` are members; `imdbapi/` and `rag_ingestion/` are path deps.
+
+## All quality commands run inside Docker
+
+```bash
+make lint            # ruff check (report only)
+make fix             # ruff --fix + format (auto-apply)
+make typecheck       # mypy --strict
+make test            # pytest app/tests/
+make test-coverage   # pytest + reports/ (JUnit + Cobertura XML + htmlcov)
+make pre-commit      # full pre-commit suite
+```
+
+## Python rules
+
+- mypy --strict must pass — no type: ignore without explanatory comment
+- No bare except: — catch specific types
+- No print() — use logging
+- Async all the way — never block in async context
+- Line length: 100 (ruff)
+- Docstrings on all public classes and functions (Google style)
+
+## Design patterns (follow strictly)
+
+- Dependency injection: FastAPI Depends() for db pool, auth, config, graph
+- Repository: data access in repository classes — no raw SQL in route handlers
+- Configuration: Pydantic BaseSettings — never os.getenv() in business logic
+- Middleware: cross-cutting concerns in middleware
+- SSE: thin proxy route — business logic stays in chain/
+
+## Test outputs
+
+All test outputs go to `reports/`:
+- `reports/junit.xml`
+- `reports/coverage.xml`
+- `reports/htmlcov/`
+
+## CI
+
+Per-repo CI: Lint + Typecheck + Test only.
+Image builds happen in the root movie-finder pipeline.
