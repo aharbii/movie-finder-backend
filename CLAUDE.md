@@ -13,7 +13,7 @@ packages consumed by the app.
 - **Auth:** JWT (python-jose, bcrypt) — 30-min access token, 7-day refresh token
 - **Sessions:** PostgreSQL 16 via asyncpg connection pool
 - **Streaming:** SSE (`StreamingResponse`) — proxies LangGraph pipeline events to the frontend
-- **uv workspace:** `app/` and `chain/` are members (`imdbapi/` and `rag_ingestion/` are independent path dependencies)
+- **uv workspace:** `app/` and `chain/` are members (`imdbapi/` is an independent path dependency)
 - **Makefile:** `backend/Makefile` — Docker-only dev contract for the backend app stack
 - **Pre-commit:** runs inside Docker via `make pre-commit`
 
@@ -23,7 +23,6 @@ packages consumed by the app.
 app/src/          FastAPI application (routes, middleware, deps)
 chain/src/        LangGraph pipeline imported by the app
 imdbapi/          Independent submodule (imported by chain via path dependency)
-rag_ingestion/    Standalone child repo (not part of the backend dev image)
 pyproject.toml    uv workspace root + shared tool config (ruff, mypy, pytest)
 docker-compose.yml
 Dockerfile
@@ -44,7 +43,7 @@ Jenkinsfile
 | `backend/app/`           | (nested)                              | FastAPI application layer                       |
 | `backend/chain/`         | `aharbii/movie-finder-chain`          | LangGraph AI pipeline                           |
 | `backend/chain/imdbapi/` | `aharbii/imdbapi-client`              | Async IMDb REST client                          |
-| `backend/rag_ingestion/` | `aharbii/movie-finder-rag`            | Offline embedding ingestion                     |
+| `rag/`                   | `aharbii/movie-finder-rag`            | Offline embedding ingestion (root-level tool)   |
 | `frontend/`              | `aharbii/movie-finder-frontend`       | Angular SPA                                     |
 | `docs/`                  | `aharbii/movie-finder-docs`           | Architecture + docs                             |
 | `infrastructure/`        | `aharbii/movie-finder-infrastructure` | IaC / Azure provisioning                        |
@@ -91,13 +90,14 @@ Do not use this iteration to take over the standalone child repo flows for:
 
 - `movie-finder-chain#9`
 - `imdbapi-client#3`
-- `movie-finder-rag#13`
 
 If the backend root needs to reference those repos:
 
 1. keep the root change narrowly backend-owned
 2. document the handoff or dependency as an issue comment
 3. leave the child repo implementation to its own issue
+
+`rag/` is no longer a backend submodule — it lives at the monorepo root.
 
 ---
 
@@ -128,7 +128,7 @@ If the backend root needs to reference those repos:
 
 ## Pre-commit hooks
 
-`backend/.pre-commit-config.yaml` covers `app/`; `chain/`, `imdbapi/`, `rag_ingestion/` each have their own.
+`backend/.pre-commit-config.yaml` covers `app/`; `chain/` and `imdbapi/` each have their own.
 
 ```bash
 make pre-commit

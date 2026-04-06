@@ -27,6 +27,10 @@ reports/
 # Secrets — never commit
 .env
 
+# rag_ingestion — moved to root rag/ (aharbii/movie-finder#40)
+# Directory may still exist locally when working inside backend/; suppress it here
+rag_ingestion/
+
 # Database backups — local only, never commit
 backups/
 

@@ -1,7 +1,3 @@
-[submodule "rag_ingestion"]
-	path = rag_ingestion
-	url = ../movie-finder-rag.git
-
 [submodule "chain"]
 	path = chain
 	url = ../movie-finder-chain.git
