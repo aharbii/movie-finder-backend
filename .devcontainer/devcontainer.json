@@ -1,0 +1,69 @@
+{
+  "customizations": {
+    "jetbrains": {
+      "backend": "PyCharm",
+      "projectType": "python"
+    },
+    "vscode": {
+      "extensions": [
+        "ms-vscode-remote.remote-containers",
+        "ms-python.python",
+        "ms-python.pylance",
+        "charliermarsh.ruff",
+        "ms-python.mypy-type-checker",
+        "ms-azuretools.vscode-docker",
+        "ryanluker.vscode-coverage-gutters",
+        "ms-vscode.makefile-tools"
+      ],
+      "settings": {
+        "[python]": {
+          "editor.codeActionsOnSave": {
+            "source.fixAll.ruff": "explicit",
+            "source.organizeImports.ruff": "explicit"
+          },
+          "editor.defaultFormatter": "charliermarsh.ruff",
+          "editor.formatOnSave": true
+        },
+        "editor.rulers": [
+          100
+        ],
+        "python.analysis.extraPaths": [
+          "/workspace/app/src",
+          "/workspace/chain/src",
+          "/workspace/chain/imdbapi/src"
+        ],
+        "python.defaultInterpreterPath": "/opt/venv/bin/python",
+        "python.testing.pytestArgs": [
+          "app/tests",
+          "--asyncio-mode=auto"
+        ],
+        "python.testing.pytestEnabled": true
+      }
+    }
+  },
+  "dockerComposeFile": "../docker-compose.yml",
+  "forwardPorts": [
+    8000,
+    5432
+  ],
+  "name": "movie-finder-backend",
+  "overrideCommand": false,
+  "portsAttributes": {
+    "5432": {
+      "label": "PostgreSQL",
+      "onAutoForward": "silent"
+    },
+    "8000": {
+      "label": "FastAPI Backend",
+      "onAutoForward": "notify"
+    }
+  },
+  "postCreateCommand": "git config --global --add safe.directory /workspace && git config --global --add safe.directory '*' && echo 'Backend devcontainer ready. Run: make up'",
+  "remoteEnv": {
+    "GIT_DISCOVERY_ACROSS_FILESYSTEM": "1"
+  },
+  "remoteUser": "root",
+  "service": "backend",
+  "shutdownAction": "stopCompose",
+  "workspaceFolder": "/workspace"
+}

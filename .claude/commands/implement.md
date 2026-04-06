@@ -2,7 +2,7 @@
 
 **Repo:** `aharbii/movie-finder-backend`
 **Parent tracker:** `aharbii/movie-finder`
-**Pre-commit:** `uv run pre-commit run --all-files`
+**Pre-commit:** `make pre-commit` (runs inside Docker — no host Python required)
 
 Implement GitHub issue #$ARGUMENTS from `aharbii/movie-finder-backend`.
 
@@ -64,10 +64,10 @@ Follow the acceptance criteria. Backend standards:
 ## Step 6 — Run quality checks
 
 ```bash
-uv run pre-commit run --all-files
+make pre-commit
 ```
 
-Fix all findings before committing.
+Runs all hooks inside Docker — no host Python required. Fix all findings before committing.
 
 ---
 

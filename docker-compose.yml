@@ -47,7 +47,17 @@ services:
       target: dev
     image: movie-finder-backend:dev
     working_dir: /workspace
-    command: ["uvicorn", "app.main:app", "--reload", "--host", "0.0.0.0", "--port", "8000"]
+    command:
+      [
+        "/workspace/scripts/start-backend.sh",
+        "uvicorn",
+        "app.main:app",
+        "--reload",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+      ]
     environment:
       # App runtime
       APP_ENV: ${APP_ENV:-development}
@@ -83,6 +93,11 @@ services:
       IMDB_SEARCH_LIMIT: ${IMDB_SEARCH_LIMIT:-3}
       CONFIDENCE_THRESHOLD: ${CONFIDENCE_THRESHOLD:-0.3}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      CORS_ORIGINS: ${CORS_ORIGINS:-["http://localhost:4200"]}
+      GLOBAL_RATE_LIMIT: ${GLOBAL_RATE_LIMIT:-100/minute}
+      AUTH_RATE_LIMIT: ${AUTH_RATE_LIMIT:-5/minute}
+      CHAT_RATE_LIMIT: ${CHAT_RATE_LIMIT:-20/minute}
+      MAX_MESSAGE_LENGTH: ${MAX_MESSAGE_LENGTH:-2000}
       GIT_DIR: /workspace/.gitdir
       GIT_WORK_TREE: /workspace
     volumes:
@@ -95,6 +110,8 @@ services:
       - ./pyproject.toml:/workspace/pyproject.toml
       - ./uv.lock:/workspace/uv.lock
       - ./Makefile:/workspace/Makefile
+      - ./alembic.ini:/workspace/alembic.ini
+      - ./alembic:/workspace/alembic
       - ./README.md:/workspace/README.md
       - ./CONTRIBUTING.md:/workspace/CONTRIBUTING.md
       - ./Dockerfile:/workspace/Dockerfile
@@ -104,9 +121,10 @@ services:
 
       # Test and coverage report output — written inside the container and
       # read back on the host (e.g. by CI artifact collectors or Coverage Gutters).
-      - ./coverage.xml:/workspace/coverage.xml
-      - ./junit.xml:/workspace/junit.xml
-      - ./htmlcov:/workspace/htmlcov
+      # A directory bind mount is used instead of individual files because Docker
+      # auto-creates missing bind-mount sources as directories, which would cause
+      # pytest to error with "--junitxml must be a filename".
+      - ./reports:/workspace/reports
 
       # The Bridge: Mount the submodule's metadata folder (read-only)
       # so Git can find its history without following relative submodule pointers.

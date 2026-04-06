@@ -16,12 +16,15 @@ classifiers = [
 dependencies = [
     "movie-finder-chain",
     "imdbapi-client",
+    "alembic>=1.17.1",
     "fastapi[standard]>=0.115.0",
     "python-jose[cryptography]>=3.3.0",
     "bcrypt>=4.0.0",
     "asyncpg>=0.30.0",
     "email-validator>=2.2.0",
     "pydantic>=2.12.5",
+    "slowapi>=0.1.9",
+    "sqlalchemy[asyncio]>=2.0.44",
 ]
 
 [dependency-groups]
@@ -86,6 +89,11 @@ plugins = ["pydantic.mypy"]
 module = "app.auth.middleware"
 disable_error_code = ["misc", "no-any-return"]
 
+[[tool.mypy.overrides]]
+# slowapi decorators are untyped; keep the suppression scoped to decorated route modules.
+module = ["app.routers.auth", "app.routers.chat"]
+disable_error_code = ["untyped-decorator"]
+
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
@@ -93,7 +101,8 @@ asyncio_mode = "auto"
 addopts = ["-v", "--tb=short"]
 
 [tool.coverage.run]
-source = ["."]
+source = ["src"]
+relative_files = true
 omit = ["tests/*", "*/py.typed"]
 
 [tool.coverage.report]

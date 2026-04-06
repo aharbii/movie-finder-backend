@@ -1,7 +1,7 @@
 # Implement Prompt — movie-finder-backend
 
 **Repo:** `aharbii/movie-finder-backend`
-**Pre-commit:** uv run pre-commit run --all-files
+**Pre-commit:** `make pre-commit` (Docker-only — no host Python required)
 
 Read ai-context/issue-agent-briefing-template.md for the Agent Briefing format.
 
@@ -44,7 +44,7 @@ Step 6: Implement the acceptance criteria. No more, no less.
 Step 7: Apply cross-cutting updates listed in the Agent Briefing.
 
 Step 8: Run quality checks.
-uv run pre-commit run --all-files
+make pre-commit
 
 Step 9: Commit.
 git add [specific files only — never git add -A]

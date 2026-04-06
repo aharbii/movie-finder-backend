@@ -12,7 +12,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.auth.middleware import verify_token
-from app.auth.models import UserInDB
+from app.models.user import UserOut
 from app.session.store import SessionStore
 
 if TYPE_CHECKING:
@@ -28,11 +28,13 @@ _graph: CompiledGraph | None = None
 
 
 def set_graph(graph: Any) -> None:  # noqa: ANN401
+    """Store the compiled graph singleton for later dependency injection."""
     global _graph
     _graph = graph
 
 
 def get_graph() -> Any:  # noqa: ANN401
+    """Return the compiled graph singleton."""
     if _graph is None:
         raise RuntimeError("Graph not initialized — lifespan not started")
     return _graph
@@ -46,11 +48,13 @@ _store: SessionStore | None = None
 
 
 def set_store(store: SessionStore) -> None:
+    """Store the session repository singleton for later dependency injection."""
     global _store
     _store = store
 
 
 def get_store() -> SessionStore:
+    """Return the configured session repository singleton."""
     if _store is None:
         raise RuntimeError("SessionStore not initialized — lifespan not started")
     return _store
@@ -64,7 +68,8 @@ def get_store() -> SessionStore:
 async def get_current_user(
     credentials: Annotated[HTTPAuthorizationCredentials, Depends(_bearer)],
     store: Annotated[SessionStore, Depends(get_store)],
-) -> UserInDB:
+) -> UserOut:
+    """Resolve the authenticated user while keeping password hashes internal."""
     token_data = verify_token(credentials.credentials)
     if token_data.token_type != "access":
         raise HTTPException(
@@ -77,4 +82,4 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found",
         )
-    return user
+    return UserOut(id=user.id, email=user.email)

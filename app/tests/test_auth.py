@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock
+
 import httpx
 import pytest
 from fastapi import HTTPException
+from fastapi.security import HTTPAuthorizationCredentials
 
 # ---------------------------------------------------------------------------
 # Unit — password hashing
@@ -57,6 +60,8 @@ class TestJWT:
         data = verify_token(token)
         assert data.user_id == "user-456"
         assert data.token_type == "refresh"
+        assert data.jti is not None
+        assert data.expires_at is not None
 
     def test_invalid_token_raises_401(self) -> None:
         from app.auth.middleware import verify_token
@@ -184,6 +189,24 @@ class TestLogin:
         )
         assert resp.status_code == 401
 
+    async def test_rate_limit_returns_429_and_retry_after(
+        self,
+        client: httpx.AsyncClient,
+        registered_user: tuple[str, str, str],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from app.config import get_config
+
+        email, password, _ = registered_user
+        monkeypatch.setenv("AUTH_RATE_LIMIT", "1/minute")
+        get_config.cache_clear()
+
+        first = await client.post("/auth/login", json={"email": email, "password": password})
+        second = await client.post("/auth/login", json={"email": email, "password": password})
+        assert first.status_code == 200
+        assert second.status_code == 429
+        assert "Retry-After" in second.headers
+
 
 # ---------------------------------------------------------------------------
 # Integration — POST /auth/refresh
@@ -214,3 +237,68 @@ class TestRefresh:
     async def test_invalid_token_rejected(self, client: httpx.AsyncClient) -> None:
         resp = await client.post("/auth/refresh", json={"refresh_token": "garbage.token.value"})
         assert resp.status_code == 401
+
+    async def test_revoked_refresh_token_rejected(
+        self, client: httpx.AsyncClient, registered_user: tuple[str, str, str]
+    ) -> None:
+        email, password, _ = registered_user
+        login = await client.post("/auth/login", json={"email": email, "password": password})
+        refresh_token = login.json()["refresh_token"]
+
+        logout = await client.post("/auth/logout", json={"refresh_token": refresh_token})
+        assert logout.status_code == 204
+
+        resp = await client.post("/auth/refresh", json={"refresh_token": refresh_token})
+        assert resp.status_code == 401
+
+
+class TestLogout:
+    async def test_valid_refresh_token_returns_204(
+        self, client: httpx.AsyncClient, registered_user: tuple[str, str, str]
+    ) -> None:
+        email, password, _ = registered_user
+        login = await client.post("/auth/login", json={"email": email, "password": password})
+        refresh_token = login.json()["refresh_token"]
+
+        resp = await client.post("/auth/logout", json={"refresh_token": refresh_token})
+        assert resp.status_code == 204
+
+    async def test_access_token_rejected_as_logout_token(
+        self, client: httpx.AsyncClient, registered_user: tuple[str, str, str]
+    ) -> None:
+        _, _, access_token = registered_user
+        resp = await client.post("/auth/logout", json={"refresh_token": access_token})
+        assert resp.status_code == 401
+
+
+class TestCurrentUserDependency:
+    async def test_returns_user_out_without_hashed_password(self) -> None:
+        from app.dependencies import get_current_user
+
+        credentials = HTTPAuthorizationCredentials(
+            scheme="Bearer",
+            credentials="unused",
+        )
+        store = AsyncMock()
+        store.get_user_by_id.return_value = type(
+            "UserRecord",
+            (),
+            {
+                "id": "user-1",
+                "email": "user@example.com",
+                "hashed_password": "secret-hash",  # pragma: allowlist secret
+            },
+        )()
+
+        with pytest.MonkeyPatch.context() as monkeypatch:
+            monkeypatch.setattr(
+                "app.dependencies.verify_token",
+                lambda token: type(
+                    "TokenData", (), {"user_id": "user-1", "token_type": "access"}
+                )(),
+            )
+            current_user = await get_current_user(credentials=credentials, store=store)
+
+        assert current_user.id == "user-1"
+        assert current_user.email == "user@example.com"
+        assert not hasattr(current_user, "hashed_password")

@@ -13,6 +13,17 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - Docker-only backend-root coverage workflow via `make test-coverage`
 - Local postgres bootstrap SQL for the dedicated `movie_finder_test` database
 - `/health/live` and `/health/ready` probes for container liveness and database readiness
+- Alembic migration workflow and Docker-backed database Make targets
+- Refresh-token logout and revocation support
+- Route-level rate limiting, CORS configuration, and chat message length validation
+- `app/src/app/logging_config.py` — centralised `configure_logging()` bootstrap (idempotent,
+  reads `LOG_LEVEL` / `LOG_FORMAT`, configures `app`, `chain`, `imdbapi`, `rag` namespaces,
+  suppresses noisy HTTP library loggers)
+- `LOG_FORMAT` env var documented in `.env.example` — `text` (default) or `json` for
+  Azure Monitor / structured log pipelines
+- GitHub Actions CI workflow (`.github/workflows/ci.yml`) mirroring Jenkins 1:1:
+  Lint · Typecheck · Test · Coverage reporting via `EnricoMi/publish-unit-test-result-action@v2`,
+  `irongut/CodeCoverageSummary@v1.3.0`, and `marocchino/sticky-pull-request-comment@v2`
 
 ### Changed
 
@@ -20,6 +31,19 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - Restored detailed inline guidance across the backend docs, scripts, VS Code config, and agent instruction files
 - Updated Jenkins and Azure provisioning to the canonical Qdrant secret names from the infrastructure contract
 - Clarified that child repo standalone workflows remain owned by their own issues in this iteration
+- Replaced raw startup DDL with migrated PostgreSQL schema using UUID, TIMESTAMPTZ, JSONB, and supporting indexes
+- Paginated `/chat/sessions` responses and narrowed authenticated route user objects to `UserOut`
+- `app/src/app/main.py` now calls `configure_logging()` before the FastAPI app is assembled
+- All test outputs (`junit.xml`, `coverage.xml`, `htmlcov/`) now written to a `reports/`
+  subdirectory; `docker-compose.yml` uses a directory bind-mount (`./reports:/workspace/reports`)
+  instead of individual file bind-mounts, fixing a Docker bug where missing host files were
+  auto-created as directories causing `--junitxml must be a filename` errors
+- `Jenkinsfile` — renamed "Chain Coverage" label to "Backend Coverage"; fixed `sourceDirectories`
+  from `[[path: 'app/src']]` to `[[path: 'app']]` so Jenkins correctly resolves source file
+  paths from coverage.xml; removed Build App Image stage (image builds now orchestrated by the
+  root `aharbii/movie-finder` pipeline); updated all report paths to `reports/`
+- Coverage config (`pyproject.toml`) — `source = ["app/src"]` + `relative_files = true` so
+  coverage.xml emits workspace-relative paths instead of absolute Docker container paths
 
 ---
 

@@ -58,3 +58,14 @@ disable_error_code = ["call-arg"]
 # inline comments don't get stripped by the auto-formatter.
 module = "chain.nodes.qa_agent"
 disable_error_code = ["call-overload"]
+
+[tool.coverage.run]
+# relative_files ensures coverage.xml paths are workspace-relative, not absolute
+# container paths. Without this, Jenkins recordCoverage fails with
+# "Removing non-workspace source directory '/workspace/app'" errors.
+source = ["app/src", "chain/src", "chain/imdbapi/src"]
+relative_files = true
+omit = ["*/tests/*", "*/examples/*", "*/py.typed"]
+
+[tool.coverage.report]
+show_missing = true

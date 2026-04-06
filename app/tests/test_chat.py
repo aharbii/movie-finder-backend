@@ -7,6 +7,7 @@ import uuid
 from typing import Any
 
 import httpx
+import pytest
 
 from app.session.store import SessionStore
 
@@ -388,7 +389,7 @@ class TestListSessions:
         auth_headers: dict[str, str],
     ) -> None:
         resp = await client.get("/chat/sessions", headers=auth_headers)
-        assert resp.json() == []
+        assert resp.json() == {"total": 0, "limit": 20, "offset": 0, "items": []}
 
     async def test_returns_session_after_chat(
         self,
@@ -403,8 +404,9 @@ class TestListSessions:
         )
         resp = await client.get("/chat/sessions", headers=auth_headers)
         body = resp.json()
-        assert len(body) == 1
-        assert body[0]["session_id"] == sid
+        assert body["total"] == 1
+        assert len(body["items"]) == 1
+        assert body["items"][0]["session_id"] == sid
 
     async def test_response_shape(
         self,
@@ -417,7 +419,7 @@ class TestListSessions:
             json={"session_id": sid, "message": "A space movie"},
             headers=auth_headers,
         )
-        item = (await client.get("/chat/sessions", headers=auth_headers)).json()[0]
+        item = (await client.get("/chat/sessions", headers=auth_headers)).json()["items"][0]
         assert "session_id" in item
         assert "phase" in item
         assert "updated_at" in item
@@ -434,7 +436,7 @@ class TestListSessions:
             json={"session_id": sid, "message": "A space movie"},
             headers=auth_headers,
         )
-        item = (await client.get("/chat/sessions", headers=auth_headers)).json()[0]
+        item = (await client.get("/chat/sessions", headers=auth_headers)).json()["items"][0]
         assert item["first_message"] == "A space movie"
 
     async def test_ordered_newest_first(
@@ -450,8 +452,8 @@ class TestListSessions:
             "/chat", json={"session_id": sid2, "message": "Second"}, headers=auth_headers
         )
         body = (await client.get("/chat/sessions", headers=auth_headers)).json()
-        assert body[0]["session_id"] == sid2
-        assert body[1]["session_id"] == sid1
+        assert body["items"][0]["session_id"] == sid2
+        assert body["items"][1]["session_id"] == sid1
 
     async def test_only_own_sessions_returned(
         self,
@@ -474,7 +476,27 @@ class TestListSessions:
         )
         # Original user's session list should be empty
         body = (await client.get("/chat/sessions", headers=auth_headers)).json()
-        assert body == []
+        assert body["items"] == []
+
+    async def test_pagination_metadata_and_items(
+        self,
+        client: httpx.AsyncClient,
+        auth_headers: dict[str, str],
+    ) -> None:
+        sid1, sid2 = new_session_id(), new_session_id()
+        await client.post(
+            "/chat", json={"session_id": sid1, "message": "First"}, headers=auth_headers
+        )
+        await client.post(
+            "/chat", json={"session_id": sid2, "message": "Second"}, headers=auth_headers
+        )
+
+        body = (await client.get("/chat/sessions?limit=1&offset=1", headers=auth_headers)).json()
+        assert body["total"] == 2
+        assert body["limit"] == 1
+        assert body["offset"] == 1
+        assert len(body["items"]) == 1
+        assert body["items"][0]["session_id"] == sid1
 
     async def test_unauthenticated_returns_401(self, client: httpx.AsyncClient) -> None:
         resp = await client.get("/chat/sessions")
@@ -552,7 +574,7 @@ class TestConfirmedMoviePersistence:
         movie = {"imdb_id": "tt0133093", "imdb_title": "The Matrix", "imdb_year": 1999}
         await store.set_confirmed_movie(sid, movie)
         body = (await client.get("/chat/sessions", headers=auth_headers)).json()
-        assert body[0]["confirmed_movie"] == movie
+        assert body["items"][0]["confirmed_movie"] == movie
 
     async def test_set_confirmed_movie_called_on_qa_phase(
         self,
@@ -630,7 +652,7 @@ class TestDeleteSession:
         sid = await self._make_session(client, auth_headers)
         await client.delete(f"/chat/{sid}", headers=auth_headers)
         body = (await client.get("/chat/sessions", headers=auth_headers)).json()
-        assert all(s["session_id"] != sid for s in body)
+        assert all(s["session_id"] != sid for s in body["items"])
 
     async def test_deleted_session_history_returns_404(
         self,
@@ -672,3 +694,58 @@ class TestDeleteSession:
     async def test_unauthenticated_returns_401(self, client: httpx.AsyncClient) -> None:
         resp = await client.delete(f"/chat/{new_session_id()}")
         assert resp.status_code == 401
+
+
+class TestValidationAndMiddleware:
+    async def test_rejects_oversized_chat_messages(
+        self,
+        client: httpx.AsyncClient,
+        auth_headers: dict[str, str],
+    ) -> None:
+        resp = await client.post(
+            "/chat",
+            json={"session_id": new_session_id(), "message": "x" * 2001},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 422
+
+    async def test_chat_rate_limit_returns_429_and_retry_after(
+        self,
+        client: httpx.AsyncClient,
+        auth_headers: dict[str, str],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from app.config import get_config
+
+        monkeypatch.setenv("CHAT_RATE_LIMIT", "1/minute")
+        get_config.cache_clear()
+
+        first = await client.post(
+            "/chat",
+            json={"session_id": new_session_id(), "message": "first"},
+            headers=auth_headers,
+        )
+        second = await client.post(
+            "/chat",
+            json={"session_id": new_session_id(), "message": "second"},
+            headers=auth_headers,
+        )
+
+        assert first.status_code == 200
+        assert second.status_code == 429
+        assert "Retry-After" in second.headers
+
+    async def test_cors_preflight_returns_allow_origin_header(
+        self,
+        client: httpx.AsyncClient,
+    ) -> None:
+        resp = await client.options(
+            "/chat",
+            headers={
+                "Origin": "http://localhost:4200",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "Authorization,Content-Type",
+            },
+        )
+        assert resp.status_code == 200
+        assert resp.headers["access-control-allow-origin"] == "http://localhost:4200"

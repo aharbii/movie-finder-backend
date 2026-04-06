@@ -13,10 +13,7 @@ build/
 # Test & coverage
 .pytest_cache/
 .coverage
-coverage.xml
-test-results.xml
-junit.xml
-htmlcov/
+reports/
 
 # IDEs
 .vscode/*
@@ -29,6 +26,13 @@ htmlcov/
 
 # Secrets — never commit
 .env
+
+# rag_ingestion — moved to root rag/ (aharbii/movie-finder#40)
+# Directory may still exist locally when working inside backend/; suppress it here
+rag_ingestion/
+
+# Database backups — local only, never commit
+backups/
 
 # Logs
 logs/
