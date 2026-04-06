@@ -58,7 +58,10 @@
       "onAutoForward": "notify"
     }
   },
-  "postCreateCommand": "echo 'Backend devcontainer ready. Run: make up'",
+  "postCreateCommand": "git config --global --add safe.directory /workspace && git config --global --add safe.directory '*' && echo 'Backend devcontainer ready. Run: make up'",
+  "remoteEnv": {
+    "GIT_DISCOVERY_ACROSS_FILESYSTEM": "1"
+  },
   "remoteUser": "root",
   "service": "backend",
   "shutdownAction": "stopCompose",
