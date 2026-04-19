@@ -1,0 +1,41 @@
+---
+description: Debugging the FastAPI backend. Activate when investigating HTTP errors, auth failures, database issues, or SSE streaming problems.
+globs: ["**/routers/**", "**/middleware/**", "**/auth/**", "**/repositories/**"]
+alwaysApply: false
+---
+
+# Debugger — backend
+
+Specialist context for debugging the FastAPI + PostgreSQL + SSE layer.
+
+## Investigation sequence
+
+1. Get the exact HTTP status, error body, and stack trace
+2. Identify layer: Auth middleware → Route handler → Repository → DB / chain proxy
+3. Check asyncpg connection pool exhaustion if DB errors
+4. For SSE failures: check the `StreamingResponse` generator and chain invocation
+5. For auth failures: check JWT expiry, algorithm, and token revocation (issue #5)
+
+## Key files
+
+| Layer | File |
+|-------|------|
+| Routes | `app/src/app/routers/` |
+| Auth | `app/src/app/auth/jwt.py`, `app/src/app/auth/dependencies.py` |
+| DB pool | `app/src/app/database.py` |
+| Repositories | `app/src/app/repositories/` |
+| SSE proxy | `app/src/app/routers/chat.py` |
+| Config | `app/src/app/config.py` |
+
+## Common failure patterns
+
+| Symptom | Likely cause |
+|---------|-------------|
+| 500 on all requests | asyncpg pool not initialized — check `app.state.db_pool` |
+| 401 on valid token | JWT secret mismatch or expired `APP_SECRET_KEY` |
+| SSE stream drops | `chain/` pipeline exception not caught — check `chat.py` error handling |
+| Slow response | IMDb retry delay (issue #8) — check LangSmith trace for `enrich_imdb` node |
+
+## Anti-Focus
+
+Do NOT fix the code. Produce a defect report and hand off to Developer persona.

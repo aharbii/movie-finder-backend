@@ -1,0 +1,56 @@
+---
+description: Movie Finder — backend submodule context. Always active.
+alwaysApply: true
+---
+
+# backend — FastAPI + uv Workspace Root
+
+This is `movie-finder-backend` (`backend/`) — the HTTP/SSE API layer and Python workspace root.
+GitHub repo: `aharbii/movie-finder-backend` · Tracker: `aharbii/movie-finder`
+
+## What this submodule does
+
+FastAPI backend: JWT auth, PostgreSQL session store, SSE proxy that streams the LangGraph pipeline to the frontend.
+
+- **Auth:** JWT (python-jose, bcrypt) — 30-min access token, 7-day refresh token
+- **Sessions:** PostgreSQL 16 via asyncpg connection pool
+- **Streaming:** `StreamingResponse` (SSE) — proxies `chain/` events to the frontend
+- **uv workspace:** `app/` and `chain/` are workspace members; `imdbapi/` is a path dependency
+
+## Key source layout
+
+```
+app/src/           FastAPI application (routes, middleware, deps, repositories)
+chain/src/         LangGraph pipeline (workspace member)
+imdbapi/           IMDb async client (path dependency)
+pyproject.toml     uv workspace root + shared tool config (ruff, mypy, pytest)
+docker-compose.yml
+Dockerfile
+Makefile
+```
+
+## Stack
+
+- Python 3.13, FastAPI 0.115+, asyncpg, python-jose, bcrypt
+- Qdrant Cloud (always external), PostgreSQL 16
+- Package manager: `uv` (workspace root)
+- Local dev: Docker Compose + VSCode attached-container workflow
+
+## Quality checks (all run inside Docker)
+
+```bash
+make lint && make typecheck && make test
+make pre-commit
+```
+
+## Non-negotiables
+
+- `Depends()` for db pool, auth, config, graph — never instantiate inside route handlers
+- No raw SQL in route handlers — data access in repository classes
+- `Pydantic BaseSettings` in `config.py` — no `os.getenv()` in business logic
+- Route handlers stay thin — delegate to services and repositories
+- Never `git add -A`, never `--no-verify`, Conventional Commits
+
+## Personas available
+
+`/architect`, `/implement`, `/review-pr`, `/debug`, `/mentor`, `/pm`, `/sdet` — type `/` to see all.

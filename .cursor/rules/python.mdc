@@ -1,0 +1,34 @@
+---
+description: Python standards for the FastAPI backend submodule.
+globs: ["**/*.py"]
+alwaysApply: false
+---
+
+# Python Standards — backend
+
+All root Python standards apply. Backend-specific additions:
+
+## FastAPI patterns
+
+- **Dependency injection:** Use `Depends()` for db pool, current user, config, and graph. Never instantiate shared resources inside route handlers.
+- **Repository pattern:** Data access lives in repository classes — no raw SQL in route handlers.
+- **Middleware:** Cross-cutting concerns (auth, CORS, error handling) belong in middleware, not repeated per route.
+- **SSE routes:** The streaming endpoint is a thin proxy — business logic stays in `chain/`.
+- **asyncpg:** Use the connection pool, never create standalone connections. Release connections in `finally` blocks.
+
+## Testing
+
+```bash
+make test                  # pytest --asyncio-mode=auto
+make test-integration      # requires running Docker services
+make check                 # lint + typecheck + test
+```
+
+Use `httpx.AsyncClient` with FastAPI's `TestClient` for route tests.
+Do not mock the database for integration tests — use real PostgreSQL.
+
+## Type annotations
+
+- All route handlers must have full type annotations including return types
+- `Response` model on every route — no untyped returns
+- `UserInDB` must not be returned directly to clients (see issue #12)

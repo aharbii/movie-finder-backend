@@ -1,6 +1,9 @@
 # Gemini CLI — backend submodule
 
-Foundational mandate for the `movie-finder-backend` (`backend/`).
+This is **`movie-finder-backend`** (`backend/`) — part of the Movie Finder project.
+GitHub repo: `aharbii/movie-finder-backend` · Parent repo: `aharbii/movie-finder`
+
+> See root GEMINI.md for: full submodule map, GitHub issue/PR hygiene, coding standards, branching strategy, session start protocol.
 
 ---
 
@@ -33,31 +36,13 @@ FastAPI backend — HTTP/SSE API layer and backend integration root.
 
 ---
 
-## Coding standards
+## Common Makefile targets
 
-- `mypy --strict` must pass.
-- Async all the way — no blocking I/O.
-- Docstrings required (Google style).
-- Line length: 100 (`ruff`).
-
----
-
-## Common tasks
-
-- `make init`
-- `make up`
-- `make down
-- `make ci-down``
-- `make logs`
-- `make shell
-- `make editor-up`
-- `make editor-down``
-- `make lint`
-- `make format`
-- `make typecheck`
-- `make test`
-- `make test-coverage`
-- `make pre-commit`
+```bash
+make init / make up / make down / make ci-down
+make logs / make shell / make editor-up / make editor-down
+make lint / make format / make typecheck / make test / make test-coverage / make pre-commit
+```
 
 ---
 
@@ -74,29 +59,9 @@ Record dependencies and handoffs as issue comments instead.
 
 ---
 
-## Workflow invariants
-
-- This repo is the gitlink path `backend` inside `aharbii/movie-finder`. Parent
-  workflow/path filters must use `backend`, not `backend/**`.
-- Cross-repo tracker issues originate in `aharbii/movie-finder`. Create the linked child issue in
-  this repo only if this repo will actually change.
-- Inspect `.github/ISSUE_TEMPLATE/*.yml`, `.github/PULL_REQUEST_TEMPLATE.md`, and a recent
-  example before creating or editing issues/PRs. Do not improvise titles or bodies.
-- For child issues in this repo, use `.github/ISSUE_TEMPLATE/linked_task.yml` and keep the
-  description, file references, and acceptance criteria repo-specific.
-- If CI, required checks, or merge policy changes affect this repo, update contributor-facing docs
-  here and in `aharbii/movie-finder` where relevant.
-- If a new standalone issue appears mid-session, branch from `main` unless stacking is explicitly
-  requested.
-- PR descriptions must disclose the AI authoring tool + model. Any AI-assisted review comment or
-  approval must also disclose the review tool + model.
-
----
-
 ## VS Code setup
 
-`backend/.vscode/` now separates host-run tasks from attached-container Python
-tooling.
+`backend/.vscode/` separates host-run tasks from attached-container Python tooling.
 
 - `tasks.json` — host tasks that call `make <target>`
 - `launch.json` — backend app + backend app test debug configs
@@ -104,9 +69,18 @@ tooling.
   extraPaths for `app/src`, `chain/src`, and `imdbapi/src`
 - `extensions.json` — Remote Containers, Pylance, Ruff, Docker, Makefile, Coverage Gutters
 
-Run `make editor-up` (or `make up`), then attach VS Code to the running `backend` container.
+**Workflow:** run `make editor-up` (or `make up`), then attach VS Code to the running `backend` container.
 
-Child repo debug/task surfaces remain owned by their own issues for now.
+---
 
-**Modifying VSCode configs:** update `CLAUDE.md`, `GEMINI.md`, `AGENTS.md`, and
-the repo's `.github/copilot-instructions.md` after.
+## Workflow invariants (backend-specific)
+
+- Gitlink path is `backend` in `aharbii/movie-finder`. Parent path filters must use `backend`, not `backend/**`.
+- `rag/` is a direct root submodule — create issues in `aharbii/movie-finder-rag` from root, not from here.
+
+### Submodule pointer bump
+
+```bash
+# in root movie-finder
+git add backend && git commit -m "chore(backend): bump to latest main"
+```

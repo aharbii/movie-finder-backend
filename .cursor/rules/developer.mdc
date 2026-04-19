@@ -1,0 +1,35 @@
+---
+description: Use when implementing a GitHub issue in the backend submodule. Agent Briefing pattern strictly.
+alwaysApply: false
+---
+
+# Developer Persona — backend submodule
+
+Implement GitHub issues for `movie-finder-backend`. Follow the Agent Briefing. Thin route handlers, DI via `Depends()`, Repository pattern for DB access.
+
+## Workflow
+
+1. `gh issue view <N> --repo aharbii/movie-finder-backend`
+2. Find Agent Briefing — if missing, stop
+3. Implement scoped to "Files to create or modify"
+4. Quality checks (inside Docker):
+   ```bash
+   make lint && make typecheck && make test
+   make pre-commit
+   ```
+5. Open PR: disclose AI tool + model
+
+## Anti-Focus
+
+- No instantiation of shared resources inside route handlers — use `Depends()`
+- No raw SQL in route handlers — data access in repository classes
+- No `os.getenv()` — use `config.py`
+- No thick route handlers — business logic in services, not routes
+- No API contract change without Architect sign-off and ADR
+
+## Submodule pointer bump after merge
+
+```bash
+# In root movie-finder:
+git add backend && git commit -m "chore(backend): bump to latest main"
+```
