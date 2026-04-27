@@ -10,6 +10,9 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Targeted chain runtime configuration for classifier, reasoning, embedding,
+  and vector-store providers, including Docker `WITH_PROVIDERS` image extras
+  for lean provider-specific backend images
 - Docker-only backend-root coverage workflow via `make test-coverage`
 - Local postgres bootstrap SQL for the dedicated `movie_finder_test` database
 - `/health/live` and `/health/ready` probes for container liveness and database readiness
@@ -27,6 +30,11 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- Backend startup now injects validated `AppConfig` into the chain runtime so
+  the deployed container can switch provider/model/vector-store combinations
+  without relying on host-local configuration
+- Dockerized pre-commit now mounts nested submodule Git metadata correctly and
+  excludes the `chain` gitlink from backend `detect-secrets` scans
 - Standardized the backend root on a Docker-only local development contract for the app stack
 - Restored detailed inline guidance across the backend docs, scripts, VS Code config, and agent instruction files
 - Updated Jenkins and Azure provisioning to the canonical Qdrant secret names from the infrastructure contract
