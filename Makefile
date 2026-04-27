@@ -31,7 +31,7 @@
 
 COMPOSE ?= docker compose
 SERVICE ?= backend
-GIT_DIR_HOST := $(shell git rev-parse --git-dir)
+GIT_DIR_HOST := $(abspath $(shell git rev-parse --git-dir))
 GIT_HOOKS_DIR := $(GIT_DIR_HOST)/hooks
 
 # Export so docker compose picks it up automatically (avoids per-command prefix).
@@ -193,7 +193,7 @@ test-coverage:
 	fi
 
 detect-secrets:
-	$(call exec_or_run,detect-secrets scan --baseline .secrets.baseline)
+	$(call exec_or_run,detect-secrets scan --baseline .secrets.baseline --exclude-files '(^|/)chain($$|/)')
 
 pre-commit:
 	$(call exec_or_run,pre-commit run --all-files)

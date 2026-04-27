@@ -12,8 +12,10 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.auth.middleware import verify_token
+from app.config import AppConfig
 from app.models.user import UserOut
 from app.session.store import SessionStore
+from chain.config import configure_runtime_config
 
 if TYPE_CHECKING:
     from langgraph.graph.graph import CompiledGraph
@@ -38,6 +40,11 @@ def get_graph() -> Any:  # noqa: ANN401
     if _graph is None:
         raise RuntimeError("Graph not initialized — lifespan not started")
     return _graph
+
+
+def configure_chain_runtime(config: AppConfig) -> None:
+    """Pass validated backend provider settings to the chain package."""
+    configure_runtime_config(config.to_chain_config())
 
 
 # ---------------------------------------------------------------------------

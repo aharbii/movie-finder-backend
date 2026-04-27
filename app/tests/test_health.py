@@ -101,6 +101,7 @@ class TestHealth:
         monkeypatch.setattr(main, "SessionStore", lambda database_url: fake_store)
         monkeypatch.setattr(main, "checkpoint_lifespan", lambda database_url: fake_context)
         monkeypatch.setattr(main, "compile_graph", lambda checkpointer: fake_graph)
+        monkeypatch.setattr(main, "configure_chain_runtime", lambda config: None)
         monkeypatch.setattr(main, "set_store", lambda store: captured.setdefault("store", store))
         monkeypatch.setattr(main, "set_graph", lambda graph: captured.setdefault("graph", graph))
 

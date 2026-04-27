@@ -45,6 +45,8 @@ services:
       context: .
       dockerfile: Dockerfile
       target: dev
+      args:
+        WITH_PROVIDERS: ${WITH_PROVIDERS:-default-cloud}
     image: movie-finder-backend:dev
     working_dir: /workspace
     command:
@@ -69,19 +71,34 @@ services:
       DATABASE_URL: postgresql://${DB_USER:-movie_finder}:${DB_PASSWORD:-devpassword}@postgres:5432/${DB_NAME:-movie_finder}
 
       # Shared chain / vector-store contract
+      CLASSIFIER_PROVIDER: ${CLASSIFIER_PROVIDER:-anthropic}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      CLASSIFIER_MODEL: ${CLASSIFIER_MODEL:-}
-      REASONING_MODEL: ${REASONING_MODEL:-}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      TOGETHER_API_KEY: ${TOGETHER_API_KEY:-}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://localhost:11434}
+      CLASSIFIER_MODEL: ${CLASSIFIER_MODEL:-claude-haiku-4-5-20251001}
+      REASONING_PROVIDER: ${REASONING_PROVIDER:-anthropic}
+      REASONING_MODEL: ${REASONING_MODEL:-claude-sonnet-4-6}
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-openai}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-large}
+      EMBEDDING_DIMENSION: ${EMBEDDING_DIMENSION:-3072}
+      VECTOR_STORE: ${VECTOR_STORE:-qdrant}
+      VECTOR_COLLECTION_PREFIX: ${VECTOR_COLLECTION_PREFIX:-movies}
+      VECTOR_STORE_URL: ${VECTOR_STORE_URL:-}
+      VECTOR_STORE_API_KEY: ${VECTOR_STORE_API_KEY:-}
       QDRANT_URL: ${QDRANT_URL:-}
       QDRANT_API_KEY_RO: ${QDRANT_API_KEY_RO:-}
-      QDRANT_COLLECTION_NAME: ${QDRANT_COLLECTION_NAME:-movies}
-
-      # Temporary compatibility bridge for code that still expects the legacy
-      # Qdrant variable names. Remove once `movie-finder-chain#9` is merged.
-      QDRANT_ENDPOINT: ${QDRANT_URL:-}
-      QDRANT_API_KEY: ${QDRANT_API_KEY_RO:-}
-      QDRANT_COLLECTION: ${QDRANT_COLLECTION_NAME:-movies}
+      QDRANT_COLLECTION_PREFIX: ${QDRANT_COLLECTION_PREFIX:-movies}
+      CHROMADB_PERSIST_PATH: ${CHROMADB_PERSIST_PATH:-outputs/chromadb/local}
+      PINECONE_API_KEY: ${PINECONE_API_KEY:-}
+      PINECONE_INDEX_NAME: ${PINECONE_INDEX_NAME:-movie-finder-rag}
+      PINECONE_INDEX_HOST: ${PINECONE_INDEX_HOST:-}
+      PINECONE_CLOUD: ${PINECONE_CLOUD:-aws}
+      PINECONE_REGION: ${PINECONE_REGION:-us-east-1}
+      PGVECTOR_DSN: ${PGVECTOR_DSN:-}
+      PGVECTOR_SCHEMA: ${PGVECTOR_SCHEMA:-public}
 
       # Optional observability and tuning knobs
       LANGSMITH_TRACING: ${LANGSMITH_TRACING:-false}
@@ -105,6 +122,9 @@ services:
       # This avoids the overhead of syncing .git, .venv, and cache folders.
       - ./app:/workspace/app
       - ./chain:/workspace/chain
+      # Git stores the nested chain submodule worktree as a path relative to the
+      # parent .git/modules tree. Mirror that path for Dockerized Git hooks.
+      - ./chain:/backend/chain
       - ./scripts:/workspace/scripts
       # Mount workspace configuration and documentation.
       - ./pyproject.toml:/workspace/pyproject.toml
@@ -128,7 +148,10 @@ services:
 
       # The Bridge: Mount the submodule's metadata folder (read-only)
       # so Git can find its history without following relative submodule pointers.
-      - ${BACKEND_GIT_DIR:-.git}:/workspace/.gitdir
+      - ${BACKEND_GIT_DIR:-../.git/modules/backend}:/workspace/.gitdir
+      # Nested submodules keep relative gitdir pointers to /.git/modules/... when
+      # mounted at /workspace. Mirror that path so hooks can skip or inspect them.
+      - ${BACKEND_GIT_DIR:-../.git/modules/backend}:/.git/modules/backend
 
       # Tool caches live in named volumes so rebuilds stay fast.
       - uv_cache:/root/.cache/uv

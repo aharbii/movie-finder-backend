@@ -123,9 +123,9 @@ Minimum values you must fill in before startup:
 - `APP_SECRET_KEY`
 - `QDRANT_URL`
 - `QDRANT_API_KEY_RO`
-- `QDRANT_COLLECTION_NAME`
-- `ANTHROPIC_API_KEY`
-- `OPENAI_API_KEY`
+- `VECTOR_COLLECTION_PREFIX`
+- provider keys for the selected providers, for example `ANTHROPIC_API_KEY`
+  and `OPENAI_API_KEY` when using the default cloud profile
 
 Use `make down` when you are done.
 
@@ -220,27 +220,39 @@ For coverage visualization:
 The authoritative secret contract lives in
 [`../infrastructure/docs/qdrant-secret-model.md`](../infrastructure/docs/qdrant-secret-model.md).
 
-| Variable                 | Used by                   | Secret source / notes                                                                 |
-| ------------------------ | ------------------------- | ------------------------------------------------------------------------------------- |
-| `APP_SECRET_KEY`         | backend app               | Azure Key Vault: `app-secret-key`                                                     |
-| `DATABASE_URL`           | backend app, chain saver  | Azure Key Vault: `postgres-url`; required for persistent LangGraph checkpoints        |
-| `QDRANT_URL`             | app, chain, rag_ingestion | Azure Key Vault / Jenkins: `qdrant-url`                                               |
-| `QDRANT_API_KEY_RO`      | app, chain                | Azure Key Vault / Jenkins: `qdrant-api-key-ro`                                        |
-| `QDRANT_COLLECTION_NAME` | app, chain, rag_ingestion | Azure Key Vault / Jenkins: `qdrant-collection-name`                                   |
-| `QDRANT_API_KEY_RW`      | rag_ingestion only        | documented here for cross-repo alignment; not injected into the backend app container |
-| `KAGGLE_API_TOKEN`       | rag_ingestion only        | documented here for cross-repo alignment; not used by the backend app stack           |
-| `ANTHROPIC_API_KEY`      | app via chain             | Azure Key Vault: `anthropic-api-key`                                                  |
-| `OPENAI_API_KEY`         | app via chain             | Azure Key Vault: `openai-api-key`                                                     |
-| `LANGSMITH_API_KEY`      | optional tracing          | Azure Key Vault: `langsmith-api-key`                                                  |
-| `CORS_ORIGINS`           | backend app               | JSON array of allowed browser origins; never use `"*"` in production                  |
-| `GLOBAL_RATE_LIMIT`      | backend app               | SlowAPI fallback limit for all routes                                                 |
-| `AUTH_RATE_LIMIT`        | backend app               | SlowAPI limit for login/token route                                                   |
-| `CHAT_RATE_LIMIT`        | backend app               | SlowAPI limit for `/chat` requests                                                    |
-| `MAX_MESSAGE_LENGTH`     | backend app               | Max accepted user message length before FastAPI returns 422                           |
+| Variable                     | Used by                  | Secret source / notes                                                          |
+| ---------------------------- | ------------------------ | ------------------------------------------------------------------------------ |
+| `WITH_PROVIDERS`             | Docker build             | Chain optional dependency bundle: `default-cloud`, `ollama-qdrant`, etc.       |
+| `APP_SECRET_KEY`             | backend app              | Azure Key Vault: `app-secret-key`                                              |
+| `DATABASE_URL`               | backend app, chain saver | Azure Key Vault: `postgres-url`; required for persistent LangGraph checkpoints |
+| `CLASSIFIER_PROVIDER`        | app via chain            | `anthropic`, `openai`, `groq`, `together`, `ollama`, or `google`               |
+| `CLASSIFIER_MODEL`           | app via chain            | Lightweight classifier/confirmation model                                      |
+| `REASONING_PROVIDER`         | app via chain            | `anthropic`, `openai`, `groq`, `together`, `ollama`, or `google`               |
+| `REASONING_MODEL`            | app via chain            | Reasoning and Q&A model                                                        |
+| `EMBEDDING_PROVIDER`         | app via chain            | `openai`, `ollama`, `sentence-transformers`, or `huggingface`                  |
+| `EMBEDDING_MODEL`            | app via chain            | Must match the model used by RAG ingestion                                      |
+| `EMBEDDING_DIMENSION`        | app via chain            | Must match the vector dimension written by RAG ingestion                        |
+| `VECTOR_STORE`               | app via chain            | `qdrant`, `chromadb`, `pinecone`, or `pgvector`                                |
+| `VECTOR_COLLECTION_PREFIX`   | app via chain, RAG       | Final target is `{prefix}_{sanitized_model}_{dimension}`                       |
+| `QDRANT_URL`                 | app via chain            | Azure Key Vault / Jenkins: `qdrant-url`                                        |
+| `QDRANT_API_KEY_RO`          | app via chain            | Azure Key Vault / Jenkins: `qdrant-api-key-ro`                                 |
+| `ANTHROPIC_API_KEY`          | selected provider        | Azure Key Vault: `anthropic-api-key`                                           |
+| `OPENAI_API_KEY`             | selected provider        | Azure Key Vault: `openai-api-key`                                              |
+| `GROQ_API_KEY`               | selected provider        | Azure Key Vault: `groq-api-key`                                                |
+| `TOGETHER_API_KEY`           | selected provider        | Azure Key Vault: `together-api-key`                                            |
+| `GOOGLE_API_KEY`             | selected provider        | Azure Key Vault: `google-api-key`                                              |
+| `OLLAMA_BASE_URL`            | selected provider        | Docker-reachable Ollama endpoint                                               |
+| `LANGSMITH_API_KEY`          | optional tracing         | Azure Key Vault: `langsmith-api-key`                                           |
+| `CORS_ORIGINS`               | backend app              | JSON array of allowed browser origins; never use `"*"` in production           |
+| `GLOBAL_RATE_LIMIT`          | backend app              | SlowAPI fallback limit for all routes                                          |
+| `AUTH_RATE_LIMIT`            | backend app              | SlowAPI limit for login/token route                                            |
+| `CHAT_RATE_LIMIT`            | backend app              | SlowAPI limit for `/chat` requests                                             |
+| `MAX_MESSAGE_LENGTH`         | backend app              | Max accepted user message length before FastAPI returns 422                    |
 
-Do **not** reintroduce the legacy names `QDRANT_ENDPOINT`, `QDRANT_API_KEY`, or
-`QDRANT_COLLECTION` to `.env.example`. The backend compose file exports them
-internally only as a temporary compatibility bridge until `movie-finder-chain#9`.
+The backend runtime image installs only the provider SDK bundle selected by
+`WITH_PROVIDERS` at build time. Runtime env vars must select providers covered
+by that bundle; otherwise the chain fails fast with a missing optional
+dependency error.
 
 ---
 
