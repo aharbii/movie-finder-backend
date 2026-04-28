@@ -7,7 +7,7 @@
     "qdrant-evaluator": {
       "command": "uv",
       "args": ["run", "src/qdrant/main.py"],
-      "cwd": "/home/aharbi/workset/movie-finder/mcp/qdrant-explorer"
+      "cwd": "${MOVIE_FINDER_ROOT}/mcp/qdrant-explorer"
     },
     "postgres": {
       "command": "sh",

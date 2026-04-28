@@ -58,11 +58,7 @@ COPY alembic.ini ./
 COPY alembic ./alembic/
 
 RUN --mount=type=cache,target=/root/.cache/uv \
-    if [ -n "$WITH_PROVIDERS" ]; then \
-        uv sync --all-packages --all-groups --extra "$WITH_PROVIDERS" --active --no-install-workspace; \
-    else \
-        uv sync --all-packages --all-groups --active --no-install-workspace; \
-    fi
+    uv sync --all-packages --all-groups --extra "$WITH_PROVIDERS" --active --no-install-workspace
 
 CMD ["uvicorn", "app.main:app", "--reload", "--host", "0.0.0.0", "--port", "8000"]
 
@@ -93,11 +89,7 @@ COPY alembic ./alembic/
 # --no-install-workspace: install deps of all workspace members without trying
 # to build the workspace packages themselves (source is not yet present).
 RUN --mount=type=cache,target=/root/.cache/uv \
-    if [ -n "$WITH_PROVIDERS" ]; then \
-        uv sync --frozen --no-dev --all-packages --extra "$WITH_PROVIDERS" --no-install-workspace; \
-    else \
-        uv sync --frozen --no-dev --all-packages --no-install-workspace; \
-    fi
+    uv sync --frozen --no-dev --all-packages --extra "$WITH_PROVIDERS" --no-install-workspace
 
 # Copy actual source and re-sync to install workspace packages as editable.
 COPY chain/src ./chain/src
@@ -106,11 +98,7 @@ COPY app/src ./app/src
 COPY scripts/start-backend.sh ./scripts/start-backend.sh
 
 RUN --mount=type=cache,target=/root/.cache/uv \
-    if [ -n "$WITH_PROVIDERS" ]; then \
-        uv sync --frozen --no-dev --all-packages --extra "$WITH_PROVIDERS"; \
-    else \
-        uv sync --frozen --no-dev --all-packages; \
-    fi
+    uv sync --frozen --no-dev --all-packages --extra "$WITH_PROVIDERS"
 
 
 # ---- Stage 3: runtime -------------------------------------------------------

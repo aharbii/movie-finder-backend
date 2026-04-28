@@ -310,11 +310,11 @@ Current backend pipeline responsibilities:
 - check out the workspace with submodules
 - lint and type-check the backend app slice
 - run backend app tests against PostgreSQL
-- build the runtime image
-- deploy the image to Azure Container Apps
+- publish coverage reports
 
-For Azure bootstrap and secret naming, see:
+Image builds, Azure provisioning, and Container App rollout are owned by the
+parent `movie-finder` pipeline and the `infrastructure/` Terraform module. For
+runtime contract details, see:
 
 - [Jenkinsfile](Jenkinsfile)
-- [deploy/provision.sh](deploy/provision.sh)
 - [INTEGRATION.md](INTEGRATION.md)

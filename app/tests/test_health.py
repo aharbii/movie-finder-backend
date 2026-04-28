@@ -12,10 +12,6 @@ from fastapi import FastAPI
 
 
 class TestHealth:
-    async def test_health_alias_returns_200(self, client: httpx.AsyncClient) -> None:
-        resp = await client.get("/health")
-        assert resp.status_code == 200
-
     async def test_live_returns_ok_status(self, client: httpx.AsyncClient) -> None:
         resp = await client.get("/health/live")
         assert resp.json() == {"status": "ok"}
@@ -115,3 +111,38 @@ class TestHealth:
         fake_store.connect.assert_awaited_once()
         fake_store.close.assert_awaited_once()
         assert fake_context.exited is True
+
+    async def test_lifespan_closes_store_when_checkpointer_start_fails(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from app import main
+
+        fake_store = MagicMock()
+        fake_store.connect = AsyncMock()
+        fake_store.close = AsyncMock()
+
+        async def _fail_open(database_url: str) -> object:
+            del database_url
+            raise RuntimeError("checkpointer failed")
+
+        monkeypatch.setattr(
+            main,
+            "get_config",
+            lambda: SimpleNamespace(
+                app_env="test",
+                app_port=8000,
+                database_url="postgresql://movie_finder:devpassword@postgres:5432/movie_finder",  # pragma: allowlist secret
+            ),
+        )
+        monkeypatch.setattr(main, "SessionStore", lambda database_url: fake_store)
+        monkeypatch.setattr(main, "_open_checkpointer", _fail_open)
+        monkeypatch.setattr(main, "configure_chain_runtime", lambda config: None)
+        monkeypatch.setattr(main, "set_store", lambda store: None)
+
+        with pytest.raises(RuntimeError, match="checkpointer failed"):
+            async with main.lifespan(FastAPI()):
+                pass
+
+        fake_store.connect.assert_awaited_once()
+        fake_store.close.assert_awaited_once()

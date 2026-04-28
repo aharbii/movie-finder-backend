@@ -13,7 +13,8 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - Targeted chain runtime configuration for classifier, reasoning, embedding,
   and vector-store providers, including Docker `WITH_PROVIDERS` image extras
   for lean provider-specific backend images
-- Docker-only backend-root coverage workflow via `make test-coverage`
+- Docker-only backend-root coverage workflow via `make test-coverage`, now
+  enforcing 100% line and branch coverage for the FastAPI app slice
 - Local postgres bootstrap SQL for the dedicated `movie_finder_test` database
 - `/health/live` and `/health/ready` probes for container liveness and database readiness
 - Alembic migration workflow and Docker-backed database Make targets
@@ -37,7 +38,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   excludes the `chain` gitlink from backend `detect-secrets` scans
 - Standardized the backend root on a Docker-only local development contract for the app stack
 - Restored detailed inline guidance across the backend docs, scripts, VS Code config, and agent instruction files
-- Updated Jenkins and Azure provisioning to the canonical Qdrant secret names from the infrastructure contract
+- Updated Jenkins and GitHub Actions coverage gates to require 100% line and branch coverage
 - Clarified that child repo standalone workflows remain owned by their own issues in this iteration
 - Replaced raw startup DDL with migrated PostgreSQL schema using UUID, TIMESTAMPTZ, JSONB, and supporting indexes
 - Paginated `/chat/sessions` responses and narrowed authenticated route user objects to `UserOut`

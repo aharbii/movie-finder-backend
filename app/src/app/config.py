@@ -74,8 +74,6 @@ class AppConfig(BaseSettings):
     ollama_base_url: str = Field(default="http://localhost:11434")
     qdrant_url: str | None = None
     qdrant_api_key_ro: str | None = None
-    vector_store_url: str | None = None
-    vector_store_api_key: str | None = None
     chromadb_persist_path: str = Field(default="outputs/chromadb/local")
     pinecone_api_key: str | None = None
     pinecone_index_name: str = Field(default="movie-finder-rag")
@@ -101,7 +99,6 @@ class AppConfig(BaseSettings):
     @field_validator(
         "ollama_base_url",
         "qdrant_url",
-        "vector_store_url",
         "pinecone_index_host",
         mode="before",
     )
@@ -150,8 +147,6 @@ class AppConfig(BaseSettings):
             "google_api_key": self.google_api_key,
             "qdrant_url": self.qdrant_url,
             "qdrant_api_key_ro": self.qdrant_api_key_ro,
-            "vector_store_url": self.vector_store_url,
-            "vector_store_api_key": self.vector_store_api_key,
             "pinecone_api_key": self.pinecone_api_key,
             "pinecone_index_host": self.pinecone_index_host,
             "pgvector_dsn": self.pgvector_dsn,

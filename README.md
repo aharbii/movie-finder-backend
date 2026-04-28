@@ -217,8 +217,8 @@ For coverage visualization:
 
 ## Environment variables
 
-The authoritative secret contract lives in
-[`../infrastructure/docs/qdrant-secret-model.md`](../infrastructure/docs/qdrant-secret-model.md).
+The authoritative runtime contract lives in
+[`../infrastructure/docs/provider-runtime-contract.md`](../infrastructure/docs/provider-runtime-contract.md).
 
 | Variable                     | Used by                  | Secret source / notes                                                          |
 | ---------------------------- | ------------------------ | ------------------------------------------------------------------------------ |
@@ -258,21 +258,21 @@ dependency error.
 
 ## Databases and health
 
-The backend uses two distinct data systems:
+The backend uses two distinct data-system categories:
 
-| Store         | Technology        | Purpose                       |
-| ------------- | ----------------- | ----------------------------- |
-| Vector store  | **Qdrant Cloud**  | semantic movie search         |
-| Relational DB | **PostgreSQL 16** | users, sessions, chat history |
+| Store         | Technology                                | Purpose                       |
+| ------------- | ----------------------------------------- | ----------------------------- |
+| Vector store  | selected by `VECTOR_STORE`                | semantic movie search         |
+| Relational DB | **PostgreSQL 16**                         | users, sessions, chat history |
 
-Qdrant is always external. There is no supported local Qdrant container in this
-repo anymore.
+The backend image contains only the provider extras selected by `WITH_PROVIDERS`.
+The deployed environment must provide the matching vector-store settings from
+the canonical runtime contract.
 
 The backend app exposes:
 
 | Path            | Purpose                             |
 | --------------- | ----------------------------------- |
-| `/health`       | backwards-compatible liveness alias |
 | `/health/live`  | container liveness probe            |
 | `/health/ready` | database readiness probe            |
 
@@ -300,12 +300,10 @@ Build / deploy flow:
 
 1. Check out the backend workspace with submodules
 2. Lint and type-check the backend app slice
-3. Run backend app tests against a local PostgreSQL sidecar
-4. Build the runtime image
-5. Deploy the image to Azure Container Apps
+3. Run backend app tests with 100% line and branch coverage against a local PostgreSQL sidecar
 
-See [deploy/provision.sh](deploy/provision.sh) for the backend Azure bootstrap
-script and [INTEGRATION.md](INTEGRATION.md) for the cross-repo secret model.
+The parent `movie-finder` pipeline owns image build and Azure deployment. See
+[INTEGRATION.md](INTEGRATION.md) for the cross-repo runtime contract.
 
 ---
 
@@ -314,4 +312,4 @@ script and [INTEGRATION.md](INTEGRATION.md) for the cross-repo secret model.
 - [CONTRIBUTING.md](CONTRIBUTING.md) — branching, PRs, code standards
 - [INTEGRATION.md](INTEGRATION.md) — cross-repo workflow and secret sharing
 - [app/README.md](app/README.md) — FastAPI layer details
-- [../infrastructure/docs/qdrant-secret-model.md](../infrastructure/docs/qdrant-secret-model.md) — canonical secret contract
+- [../infrastructure/docs/provider-runtime-contract.md](../infrastructure/docs/provider-runtime-contract.md) — canonical runtime contract

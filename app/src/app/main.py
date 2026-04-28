@@ -133,12 +133,6 @@ app.include_router(auth.router)
 app.include_router(chat.router)
 
 
-@app.get("/health", tags=["ops"])
-async def health() -> dict[str, str]:
-    """Backwards-compatible liveness probe."""
-    return await health_live()
-
-
 @app.get("/health/live", tags=["ops"])
 async def health_live() -> dict[str, str]:
     """Liveness probe."""

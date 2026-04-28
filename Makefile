@@ -178,6 +178,8 @@ test-coverage:
 		$(COMPOSE) exec -e DATABASE_URL="$(TEST_DATABASE_URL)" $(SERVICE) \
 			sh -c 'mkdir -p reports && pytest app/tests/ --asyncio-mode=auto -v --tb=short \
 			--cov=app \
+			--cov-branch \
+			--cov-fail-under=100 \
 			--cov-report=term-missing \
 			--cov-report=xml:$(COVERAGE_XML) \
 			--cov-report=html:$(COVERAGE_HTML) \
@@ -186,6 +188,8 @@ test-coverage:
 		$(COMPOSE) run --rm -e DATABASE_URL="$(TEST_DATABASE_URL)" $(SERVICE) \
 			sh -c 'mkdir -p reports && pytest app/tests/ --asyncio-mode=auto -v --tb=short \
 			--cov=app \
+			--cov-branch \
+			--cov-fail-under=100 \
 			--cov-report=term-missing \
 			--cov-report=xml:$(COVERAGE_XML) \
 			--cov-report=html:$(COVERAGE_HTML) \

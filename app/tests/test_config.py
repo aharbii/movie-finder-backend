@@ -62,6 +62,62 @@ def test_to_chain_config_allows_node_specific_models() -> None:
     assert chain_config.reasoning_model == "llama-3.3-70b-versatile"
 
 
+def test_to_chain_config_includes_optional_provider_settings() -> None:
+    config = _make_config(
+        anthropic_api_key="anthropic-key",
+        openai_api_key="openai-key",
+        groq_api_key="groq-key",
+        together_api_key="together-key",
+        google_api_key="google-key",
+        qdrant_url="https://qdrant.example.com/",
+        qdrant_api_key_ro="qdrant-read-key",
+        pinecone_api_key="pinecone-key",
+        pinecone_index_host="https://pinecone.example.com/",
+        pgvector_dsn="postgresql://user:pass@pgvector:5432/vector_db",
+    )
+
+    chain_config = config.to_chain_config()
+
+    assert chain_config.anthropic_api_key == "anthropic-key"
+    assert chain_config.openai_api_key == "openai-key"
+    assert chain_config.groq_api_key == "groq-key"
+    assert chain_config.together_api_key == "together-key"
+    assert chain_config.google_api_key == "google-key"
+    assert chain_config.qdrant_url == "https://qdrant.example.com"
+    assert chain_config.qdrant_api_key_ro == "qdrant-read-key"
+    assert chain_config.pinecone_api_key == "pinecone-key"
+    assert chain_config.pinecone_index_host == "https://pinecone.example.com"
+    assert chain_config.pgvector_dsn == "postgresql://user:pass@pgvector:5432/vector_db"
+
+
+@pytest.mark.parametrize(
+    ("raw_value", "expected"),
+    [
+        (
+            '["https://app.example.com", "http://localhost:4200"]',
+            ["https://app.example.com", "http://localhost:4200"],
+        ),
+        (
+            "https://app.example.com, http://localhost:4200, ",
+            ["https://app.example.com", "http://localhost:4200"],
+        ),
+        ("   ", []),
+        (["https://already.example.com"], ["https://already.example.com"]),
+    ],
+)
+def test_cors_origins_are_coerced(raw_value: object, expected: list[str]) -> None:
+    config = _make_config(cors_origins=raw_value)
+
+    assert config.cors_origins == expected
+
+
+def test_optional_provider_urls_accept_none() -> None:
+    config = _make_config(qdrant_url=None, pinecone_index_host=None)
+
+    assert config.qdrant_url is None
+    assert config.pinecone_index_host is None
+
+
 def test_app_config_rejects_invalid_provider() -> None:
     with pytest.raises(ValidationError):
         _make_config(classifier_provider="invalid")

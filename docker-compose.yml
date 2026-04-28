@@ -12,8 +12,6 @@
 # Compatibility notes:
 #   - No fixed `container_name` or named volumes: this stack must coexist with
 #     the parent `movie-finder/` compose project on the same machine.
-#   - `QDRANT_ENDPOINT`, `QDRANT_API_KEY`, and `QDRANT_COLLECTION` are exported
-#     as temporary aliases until `movie-finder-chain#9` lands.
 # =============================================================================
 
 name: movie-finder-backend-local
@@ -86,11 +84,8 @@ services:
       EMBEDDING_DIMENSION: ${EMBEDDING_DIMENSION:-3072}
       VECTOR_STORE: ${VECTOR_STORE:-qdrant}
       VECTOR_COLLECTION_PREFIX: ${VECTOR_COLLECTION_PREFIX:-movies}
-      VECTOR_STORE_URL: ${VECTOR_STORE_URL:-}
-      VECTOR_STORE_API_KEY: ${VECTOR_STORE_API_KEY:-}
       QDRANT_URL: ${QDRANT_URL:-}
       QDRANT_API_KEY_RO: ${QDRANT_API_KEY_RO:-}
-      QDRANT_COLLECTION_PREFIX: ${QDRANT_COLLECTION_PREFIX:-movies}
       CHROMADB_PERSIST_PATH: ${CHROMADB_PERSIST_PATH:-outputs/chromadb/local}
       PINECONE_API_KEY: ${PINECONE_API_KEY:-}
       PINECONE_INDEX_NAME: ${PINECONE_INDEX_NAME:-movie-finder-rag}
