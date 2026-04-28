@@ -78,6 +78,37 @@ class TestJWT:
             verify_token(token)
         assert exc_info.value.status_code == 401
 
+    def test_token_missing_required_claims_raises_401(self) -> None:
+        from jose import jwt
+
+        from app.auth.middleware import ALGORITHM, verify_token
+        from app.config import get_config
+
+        token = jwt.encode({"sub": "user-1"}, get_config().app_secret_key, algorithm=ALGORITHM)
+
+        with pytest.raises(HTTPException) as exc_info:
+            verify_token(token)
+
+        assert exc_info.value.status_code == 401
+
+    def test_token_without_expiry_is_valid_with_null_expiry(self) -> None:
+        from jose import jwt
+
+        from app.auth.middleware import ALGORITHM, verify_token
+        from app.config import get_config
+
+        token = jwt.encode(
+            {"sub": "user-1", "type": "access"},
+            get_config().app_secret_key,
+            algorithm=ALGORITHM,
+        )
+
+        data = verify_token(token)
+
+        assert data.user_id == "user-1"
+        assert data.token_type == "access"
+        assert data.expires_at is None
+
 
 # ---------------------------------------------------------------------------
 # Integration — POST /auth/register

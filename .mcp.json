@@ -1,0 +1,36 @@
+{
+  "mcpServers": {
+    "github": {
+      "type": "stdio",
+      "command": "/bin/sh",
+      "args": [
+        "-c",
+        ". ~/.zshenv && GITHUB_PERSONAL_ACCESS_TOKEN=$(gh auth token) npx -y @modelcontextprotocol/server-github"
+      ]
+    },
+    "qdrant-evaluator": {
+      "type": "stdio",
+      "command": "/bin/sh",
+      "args": [
+        "-c",
+        ". ~/.zshenv && exec uv run --directory \"$MOVIE_FINDER_ROOT/mcp/qdrant-explorer\" src/qdrant/main.py"
+      ]
+    },
+    "postgres": {
+      "type": "stdio",
+      "command": "/bin/sh",
+      "args": [
+        "-c",
+        ". ~/.zshenv && exec npx -y @modelcontextprotocol/server-postgres \"$DATABASE_URL\""
+      ]
+    },
+    "jenkins-local": {
+      "type": "stdio",
+      "command": "/bin/sh",
+      "args": [
+        "-c",
+        ". ~/.zshenv && exec npx -y @kud/mcp-jenkins@latest"
+      ]
+    }
+  }
+}

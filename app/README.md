@@ -17,7 +17,7 @@ workflow standardizes in the current iteration.
 - **Session list** — `GET /chat/sessions`
 - **Session delete** — `DELETE /chat/{session_id}`
 - **Confirmed movie persistence** — the `qa` phase stores confirmed movie metadata
-- **Health probes** — `/health`, `/health/live`, `/health/ready`
+- **Health probes** — `/health/live`, `/health/ready`
 
 ---
 
@@ -82,7 +82,7 @@ make down
 | `APP_PORT`               | no       | defaults to `8000`                     |
 | `QDRANT_URL`             | yes      | canonical Qdrant endpoint              |
 | `QDRANT_API_KEY_RO`      | yes      | read-only key for app + chain          |
-| `QDRANT_COLLECTION_NAME` | yes      | shared collection identifier           |
+| `VECTOR_COLLECTION_PREFIX` | yes    | shared vector target prefix            |
 | `ANTHROPIC_API_KEY`      | yes      | required by the imported chain library |
 | `OPENAI_API_KEY`         | yes      | required by the imported chain library |
 | `LANGSMITH_*`            | no       | optional tracing                       |
@@ -95,7 +95,6 @@ The full cross-repo contract is documented in [../.env.example](../.env.example)
 
 | Path            | Purpose                                         |
 | --------------- | ----------------------------------------------- |
-| `/health`       | backwards-compatible liveness alias             |
 | `/health/live`  | container liveness probe                        |
 | `/health/ready` | readiness probe that verifies the database pool |
 
@@ -161,10 +160,11 @@ make test
 make test-coverage
 ```
 
-`make test-coverage` writes:
+`make test-coverage` enforces 100% line and branch coverage and writes:
 
-- `app-coverage.xml`
-- `htmlcov/app/`
+- `reports/coverage.xml`
+- `reports/htmlcov/`
+- `reports/junit.xml`
 
 In VS Code, the Python Test Explorer is configured for `app/tests/` only in this
 iteration, and the attached-container launch configs provide debug entry points

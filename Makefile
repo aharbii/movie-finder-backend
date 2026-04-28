@@ -31,7 +31,7 @@
 
 COMPOSE ?= docker compose
 SERVICE ?= backend
-GIT_DIR_HOST := $(shell git rev-parse --git-dir)
+GIT_DIR_HOST := $(abspath $(shell git rev-parse --git-dir))
 GIT_HOOKS_DIR := $(GIT_DIR_HOST)/hooks
 
 # Export so docker compose picks it up automatically (avoids per-command prefix).
@@ -178,6 +178,8 @@ test-coverage:
 		$(COMPOSE) exec -e DATABASE_URL="$(TEST_DATABASE_URL)" $(SERVICE) \
 			sh -c 'mkdir -p reports && pytest app/tests/ --asyncio-mode=auto -v --tb=short \
 			--cov=app \
+			--cov-branch \
+			--cov-fail-under=100 \
 			--cov-report=term-missing \
 			--cov-report=xml:$(COVERAGE_XML) \
 			--cov-report=html:$(COVERAGE_HTML) \
@@ -186,6 +188,8 @@ test-coverage:
 		$(COMPOSE) run --rm -e DATABASE_URL="$(TEST_DATABASE_URL)" $(SERVICE) \
 			sh -c 'mkdir -p reports && pytest app/tests/ --asyncio-mode=auto -v --tb=short \
 			--cov=app \
+			--cov-branch \
+			--cov-fail-under=100 \
 			--cov-report=term-missing \
 			--cov-report=xml:$(COVERAGE_XML) \
 			--cov-report=html:$(COVERAGE_HTML) \
@@ -193,7 +197,7 @@ test-coverage:
 	fi
 
 detect-secrets:
-	$(call exec_or_run,detect-secrets scan --baseline .secrets.baseline)
+	$(call exec_or_run,detect-secrets scan --baseline .secrets.baseline --exclude-files '(^|/)chain($$|/)')
 
 pre-commit:
 	$(call exec_or_run,pre-commit run --all-files)

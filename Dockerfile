@@ -28,6 +28,8 @@ ENV PYTHONUNBUFFERED=1 \
 # Used by `docker-compose.yml` and VS Code "Attach to Running Container".
 FROM uv-base AS dev
 
+ARG WITH_PROVIDERS="default-cloud"
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     make \
@@ -56,13 +58,15 @@ COPY alembic.ini ./
 COPY alembic ./alembic/
 
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --all-packages --all-groups --active --no-install-workspace
+    uv sync --all-packages --all-groups --extra "$WITH_PROVIDERS" --active --no-install-workspace
 
 CMD ["uvicorn", "app.main:app", "--reload", "--host", "0.0.0.0", "--port", "8000"]
 
 
 # ---- Stage 2: builder -------------------------------------------------------
 FROM uv-base AS builder
+
+ARG WITH_PROVIDERS="default-cloud"
 
 WORKDIR /build
 
@@ -85,7 +89,7 @@ COPY alembic ./alembic/
 # --no-install-workspace: install deps of all workspace members without trying
 # to build the workspace packages themselves (source is not yet present).
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --all-packages --no-install-workspace
+    uv sync --frozen --no-dev --all-packages --extra "$WITH_PROVIDERS" --no-install-workspace
 
 # Copy actual source and re-sync to install workspace packages as editable.
 COPY chain/src ./chain/src
@@ -94,7 +98,7 @@ COPY app/src ./app/src
 COPY scripts/start-backend.sh ./scripts/start-backend.sh
 
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --all-packages
+    uv sync --frozen --no-dev --all-packages --extra "$WITH_PROVIDERS"
 
 
 # ---- Stage 3: runtime -------------------------------------------------------

@@ -117,61 +117,34 @@ in this iteration, not absorb their implementation tasks.
 
 ---
 
-## Qdrant secret model
+## Provider and Vector Store Contract
 
 The authoritative contract lives in
-[`../infrastructure/docs/qdrant-secret-model.md`](../infrastructure/docs/qdrant-secret-model.md).
+[`../infrastructure/docs/provider-runtime-contract.md`](../infrastructure/docs/provider-runtime-contract.md).
 
 Canonical environment variables:
 
 | Variable                 | Owner / usage                                 |
 | ------------------------ | --------------------------------------------- |
-| `QDRANT_URL`             | shared endpoint for app, chain, rag_ingestion |
-| `QDRANT_API_KEY_RO`      | read-only key for app + chain                 |
-| `QDRANT_API_KEY_RW`      | write-capable key for rag_ingestion only      |
-| `QDRANT_COLLECTION_NAME` | shared collection name                        |
-| `KAGGLE_API_TOKEN`       | rag_ingestion only                            |
+| `VECTOR_COLLECTION_PREFIX` | target prefix shared by app, chain, and rag |
+| `QDRANT_URL`               | Qdrant endpoint for app, chain, and rag     |
+| `QDRANT_API_KEY_RO`        | read-only key for app + chain               |
+| `QDRANT_API_KEY_RW`        | write-capable key for rag only              |
+| `KAGGLE_API_TOKEN`         | rag only                                    |
 
-Current backend-specific implications:
+Backend-specific implications:
 
-- `.env.example` must expose the **new** names only
-- `docker-compose.yml` may still export legacy aliases internally as a bridge
-- Jenkins and Azure provisioning in this repo must refer to the new secret names
-- the backend app container must **not** receive the RW Qdrant key
+- `.env.example` exposes canonical names only.
+- `docker-compose.yml` injects only the backend runtime contract.
+- The backend app container must not receive `QDRANT_API_KEY_RW`.
 
 Current Jenkins credentials used by the backend-owned slice:
 
-| Jenkins credential ID    | Canonical env var        |
-| ------------------------ | ------------------------ |
-| `qdrant-url`             | `QDRANT_URL`             |
-| `qdrant-api-key-ro`      | `QDRANT_API_KEY_RO`      |
-| `qdrant-collection-name` | `QDRANT_COLLECTION_NAME` |
-
-Do **not** reintroduce:
-
-- `QDRANT_ENDPOINT`
-- `QDRANT_API_KEY` (no suffix)
-- `QDRANT_COLLECTION`
-- `KAGGLE_USERNAME`
-- `KAGGLE_KEY`
-
----
-
-## Child repo handoff rules
-
-When a backend-root change affects a child repo:
-
-1. keep the root repo change narrowly scoped to backend-owned concerns
-2. leave a comment on the linked issue explaining the dependency or handoff
-3. avoid implementing the child repo's standalone tooling from this repo unless
-   the issue scope has been explicitly broadened
-
-Current examples:
-
-- the backend compose file exports legacy Qdrant aliases only as a temporary
-  bridge for `movie-finder-chain#9`
-- backend docs describe the child issue ownership instead of pretending those
-  root-level capabilities already exist
+| Jenkins credential ID       | Canonical env var          |
+| --------------------------- | -------------------------- |
+| `qdrant-url`                | `QDRANT_URL`               |
+| `qdrant-api-key-ro`         | `QDRANT_API_KEY_RO`        |
+| `vector-collection-prefix`  | `VECTOR_COLLECTION_PREFIX` |
 
 ---
 
@@ -224,7 +197,7 @@ See [.env.example](.env.example) for the full current template. Quick reference:
 | `QDRANT_URL`             | app, chain, rag_ingestion    |
 | `QDRANT_API_KEY_RO`      | app, chain                   |
 | `QDRANT_API_KEY_RW`      | rag_ingestion only           |
-| `QDRANT_COLLECTION_NAME` | app, chain, rag_ingestion    |
+| `VECTOR_COLLECTION_PREFIX` | app, chain, rag_ingestion  |
 | `OPENAI_API_KEY`         | app via chain, rag_ingestion |
 | `ANTHROPIC_API_KEY`      | app via chain                |
 | `KAGGLE_API_TOKEN`       | rag_ingestion only           |
@@ -245,13 +218,3 @@ duplicate ownership.
 Yes. The attached-container VS Code settings expose `app/src`, `chain/src`, and
 `imdbapi/src` for editor intelligence because the backend app imports those
 libraries directly.
-
-**Q: Why are legacy Qdrant env vars still visible at runtime?**
-
-Only as an internal compatibility bridge in `docker-compose.yml` and Jenkins
-while `movie-finder-chain#9` migrates fully to the new secret contract.
-
-**Q: How should cross-repo dependencies be recorded right now?**
-
-Leave them as issue comments on the relevant backend/child issues so the later
-parent integration pass has an explicit paper trail.

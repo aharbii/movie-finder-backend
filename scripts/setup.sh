@@ -81,7 +81,7 @@ else
     cp .env.example .env
     ok ".env created from .env.example"
     warn "Fill in .env before running make up."
-    warn "Minimum backend values: APP_SECRET_KEY, QDRANT_URL, QDRANT_API_KEY_RO, QDRANT_COLLECTION_NAME."
+    warn "Minimum backend values: APP_SECRET_KEY, QDRANT_URL, QDRANT_API_KEY_RO, VECTOR_COLLECTION_PREFIX."
     warn "For chain-backed local flows, also add OPENAI_API_KEY and ANTHROPIC_API_KEY."
 fi
 
