@@ -175,7 +175,7 @@ All supported developer workflows go through Docker. To run quality checks for a
 child repo (chain, imdbapi, rag_ingestion), use `make` from within that directory.
 
 When you add a new migration, create it with `make db-revision MESSAGE=...`,
-edit the generated file under [`alembic/versions`](/home/aharbi/workset/movie-finder/backend/alembic/versions),
+edit the generated file under [`alembic/versions`](alembic/versions),
 then apply it with `make db-upgrade`.
 
 ---

@@ -35,7 +35,7 @@ After your branch is merged in `aharbii/movie-finder-backend`:
 
 ```bash
 # Bump backend inside root
-cd /home/aharbi/workset/movie-finder
+cd "$MOVIE_FINDER_ROOT"
 git add backend
 git commit -m "chore(backend): bump to latest main"
 ```

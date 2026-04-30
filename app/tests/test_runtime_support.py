@@ -8,7 +8,7 @@ import sys
 import time
 from collections.abc import Iterator
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock
 
 import pytest
@@ -259,9 +259,14 @@ class TestLoggingConfig:
 
 
 def test_retry_after_value_uses_limit_expiry() -> None:
+    from slowapi.errors import RateLimitExceeded
+
     from app.main import _retry_after_value
 
-    exc = SimpleNamespace(limit=SimpleNamespace(get_expiry=lambda: 12.9))
+    exc = cast(
+        RateLimitExceeded,
+        SimpleNamespace(limit=SimpleNamespace(get_expiry=lambda: 12.9)),
+    )
 
     assert _retry_after_value(exc) == "12"
 
