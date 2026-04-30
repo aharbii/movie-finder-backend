@@ -65,7 +65,9 @@ disable_error_code = ["call-overload"]
 # "Removing non-workspace source directory '/workspace/app'" errors.
 source = ["app/src", "chain/src", "chain/imdbapi/src"]
 relative_files = true
+branch = true
 omit = ["*/tests/*", "*/examples/*", "*/py.typed"]
 
 [tool.coverage.report]
 show_missing = true
+fail_under = 100

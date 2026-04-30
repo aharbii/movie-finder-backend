@@ -18,7 +18,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
 from app.config import get_config
-from app.dependencies import get_store, set_graph, set_store
+from app.dependencies import configure_chain_runtime, get_store, set_graph, set_store
 from app.limiting import limiter
 from app.logging_config import configure_logging
 from app.routers import auth, chat
@@ -84,6 +84,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         runtime_config.app_env,
         runtime_config.app_port,
     )
+    configure_chain_runtime(runtime_config)
 
     # --- Session store ---
     store = SessionStore(runtime_config.database_url)
@@ -130,12 +131,6 @@ app.add_middleware(
 app.add_middleware(SlowAPIMiddleware)
 app.include_router(auth.router)
 app.include_router(chat.router)
-
-
-@app.get("/health", tags=["ops"])
-async def health() -> dict[str, str]:
-    """Backwards-compatible liveness probe."""
-    return await health_live()
 
 
 @app.get("/health/live", tags=["ops"])

@@ -123,9 +123,9 @@ Minimum values you must fill in before startup:
 - `APP_SECRET_KEY`
 - `QDRANT_URL`
 - `QDRANT_API_KEY_RO`
-- `QDRANT_COLLECTION_NAME`
-- `ANTHROPIC_API_KEY`
-- `OPENAI_API_KEY`
+- `VECTOR_COLLECTION_PREFIX`
+- provider keys for the selected providers, for example `ANTHROPIC_API_KEY`
+  and `OPENAI_API_KEY` when using the default cloud profile
 
 Use `make down` when you are done.
 
@@ -175,7 +175,7 @@ All supported developer workflows go through Docker. To run quality checks for a
 child repo (chain, imdbapi, rag_ingestion), use `make` from within that directory.
 
 When you add a new migration, create it with `make db-revision MESSAGE=...`,
-edit the generated file under [`alembic/versions`](/home/aharbi/workset/movie-finder/backend/alembic/versions),
+edit the generated file under [`alembic/versions`](alembic/versions),
 then apply it with `make db-upgrade`.
 
 ---
@@ -217,50 +217,62 @@ For coverage visualization:
 
 ## Environment variables
 
-The authoritative secret contract lives in
-[`../infrastructure/docs/qdrant-secret-model.md`](../infrastructure/docs/qdrant-secret-model.md).
+The authoritative runtime contract lives in
+[`../infrastructure/docs/provider-runtime-contract.md`](../infrastructure/docs/provider-runtime-contract.md).
 
-| Variable                 | Used by                   | Secret source / notes                                                                 |
-| ------------------------ | ------------------------- | ------------------------------------------------------------------------------------- |
-| `APP_SECRET_KEY`         | backend app               | Azure Key Vault: `app-secret-key`                                                     |
-| `DATABASE_URL`           | backend app, chain saver  | Azure Key Vault: `postgres-url`; required for persistent LangGraph checkpoints        |
-| `QDRANT_URL`             | app, chain, rag_ingestion | Azure Key Vault / Jenkins: `qdrant-url`                                               |
-| `QDRANT_API_KEY_RO`      | app, chain                | Azure Key Vault / Jenkins: `qdrant-api-key-ro`                                        |
-| `QDRANT_COLLECTION_NAME` | app, chain, rag_ingestion | Azure Key Vault / Jenkins: `qdrant-collection-name`                                   |
-| `QDRANT_API_KEY_RW`      | rag_ingestion only        | documented here for cross-repo alignment; not injected into the backend app container |
-| `KAGGLE_API_TOKEN`       | rag_ingestion only        | documented here for cross-repo alignment; not used by the backend app stack           |
-| `ANTHROPIC_API_KEY`      | app via chain             | Azure Key Vault: `anthropic-api-key`                                                  |
-| `OPENAI_API_KEY`         | app via chain             | Azure Key Vault: `openai-api-key`                                                     |
-| `LANGSMITH_API_KEY`      | optional tracing          | Azure Key Vault: `langsmith-api-key`                                                  |
-| `CORS_ORIGINS`           | backend app               | JSON array of allowed browser origins; never use `"*"` in production                  |
-| `GLOBAL_RATE_LIMIT`      | backend app               | SlowAPI fallback limit for all routes                                                 |
-| `AUTH_RATE_LIMIT`        | backend app               | SlowAPI limit for login/token route                                                   |
-| `CHAT_RATE_LIMIT`        | backend app               | SlowAPI limit for `/chat` requests                                                    |
-| `MAX_MESSAGE_LENGTH`     | backend app               | Max accepted user message length before FastAPI returns 422                           |
+| Variable                     | Used by                  | Secret source / notes                                                          |
+| ---------------------------- | ------------------------ | ------------------------------------------------------------------------------ |
+| `WITH_PROVIDERS`             | Docker build             | Chain optional dependency bundle: `default-cloud`, `ollama-qdrant`, etc.       |
+| `APP_SECRET_KEY`             | backend app              | Azure Key Vault: `app-secret-key`                                              |
+| `DATABASE_URL`               | backend app, chain saver | Azure Key Vault: `postgres-url`; required for persistent LangGraph checkpoints |
+| `CLASSIFIER_PROVIDER`        | app via chain            | `anthropic`, `openai`, `groq`, `together`, `ollama`, or `google`               |
+| `CLASSIFIER_MODEL`           | app via chain            | Lightweight classifier/confirmation model                                      |
+| `REASONING_PROVIDER`         | app via chain            | `anthropic`, `openai`, `groq`, `together`, `ollama`, or `google`               |
+| `REASONING_MODEL`            | app via chain            | Reasoning and Q&A model                                                        |
+| `EMBEDDING_PROVIDER`         | app via chain            | `openai`, `ollama`, `sentence-transformers`, or `huggingface`                  |
+| `EMBEDDING_MODEL`            | app via chain            | Must match the model used by RAG ingestion                                      |
+| `EMBEDDING_DIMENSION`        | app via chain            | Must match the vector dimension written by RAG ingestion                        |
+| `VECTOR_STORE`               | app via chain            | `qdrant`, `chromadb`, `pinecone`, or `pgvector`                                |
+| `VECTOR_COLLECTION_PREFIX`   | app via chain, RAG       | Final target is `{prefix}_{sanitized_model}_{dimension}`                       |
+| `QDRANT_URL`                 | app via chain            | Azure Key Vault / Jenkins: `qdrant-url`                                        |
+| `QDRANT_API_KEY_RO`          | app via chain            | Azure Key Vault / Jenkins: `qdrant-api-key-ro`                                 |
+| `ANTHROPIC_API_KEY`          | selected provider        | Azure Key Vault: `anthropic-api-key`                                           |
+| `OPENAI_API_KEY`             | selected provider        | Azure Key Vault: `openai-api-key`                                              |
+| `GROQ_API_KEY`               | selected provider        | Azure Key Vault: `groq-api-key`                                                |
+| `TOGETHER_API_KEY`           | selected provider        | Azure Key Vault: `together-api-key`                                            |
+| `GOOGLE_API_KEY`             | selected provider        | Azure Key Vault: `google-api-key`                                              |
+| `OLLAMA_BASE_URL`            | selected provider        | Docker-reachable Ollama endpoint                                               |
+| `LANGSMITH_API_KEY`          | optional tracing         | Azure Key Vault: `langsmith-api-key`                                           |
+| `CORS_ORIGINS`               | backend app              | JSON array of allowed browser origins; never use `"*"` in production           |
+| `GLOBAL_RATE_LIMIT`          | backend app              | SlowAPI fallback limit for all routes                                          |
+| `AUTH_RATE_LIMIT`            | backend app              | SlowAPI limit for login/token route                                            |
+| `CHAT_RATE_LIMIT`            | backend app              | SlowAPI limit for `/chat` requests                                             |
+| `MAX_MESSAGE_LENGTH`         | backend app              | Max accepted user message length before FastAPI returns 422                    |
 
-Do **not** reintroduce the legacy names `QDRANT_ENDPOINT`, `QDRANT_API_KEY`, or
-`QDRANT_COLLECTION` to `.env.example`. The backend compose file exports them
-internally only as a temporary compatibility bridge until `movie-finder-chain#9`.
+The backend runtime image installs only the provider SDK bundle selected by
+`WITH_PROVIDERS` at build time. Runtime env vars must select providers covered
+by that bundle; otherwise the chain fails fast with a missing optional
+dependency error.
 
 ---
 
 ## Databases and health
 
-The backend uses two distinct data systems:
+The backend uses two distinct data-system categories:
 
-| Store         | Technology        | Purpose                       |
-| ------------- | ----------------- | ----------------------------- |
-| Vector store  | **Qdrant Cloud**  | semantic movie search         |
-| Relational DB | **PostgreSQL 16** | users, sessions, chat history |
+| Store         | Technology                                | Purpose                       |
+| ------------- | ----------------------------------------- | ----------------------------- |
+| Vector store  | selected by `VECTOR_STORE`                | semantic movie search         |
+| Relational DB | **PostgreSQL 16**                         | users, sessions, chat history |
 
-Qdrant is always external. There is no supported local Qdrant container in this
-repo anymore.
+The backend image contains only the provider extras selected by `WITH_PROVIDERS`.
+The deployed environment must provide the matching vector-store settings from
+the canonical runtime contract.
 
 The backend app exposes:
 
 | Path            | Purpose                             |
 | --------------- | ----------------------------------- |
-| `/health`       | backwards-compatible liveness alias |
 | `/health/live`  | container liveness probe            |
 | `/health/ready` | database readiness probe            |
 
@@ -288,12 +300,10 @@ Build / deploy flow:
 
 1. Check out the backend workspace with submodules
 2. Lint and type-check the backend app slice
-3. Run backend app tests against a local PostgreSQL sidecar
-4. Build the runtime image
-5. Deploy the image to Azure Container Apps
+3. Run backend app tests with 100% line and branch coverage against a local PostgreSQL sidecar
 
-See [deploy/provision.sh](deploy/provision.sh) for the backend Azure bootstrap
-script and [INTEGRATION.md](INTEGRATION.md) for the cross-repo secret model.
+The parent `movie-finder` pipeline owns image build and Azure deployment. See
+[INTEGRATION.md](INTEGRATION.md) for the cross-repo runtime contract.
 
 ---
 
@@ -302,4 +312,4 @@ script and [INTEGRATION.md](INTEGRATION.md) for the cross-repo secret model.
 - [CONTRIBUTING.md](CONTRIBUTING.md) — branching, PRs, code standards
 - [INTEGRATION.md](INTEGRATION.md) — cross-repo workflow and secret sharing
 - [app/README.md](app/README.md) — FastAPI layer details
-- [../infrastructure/docs/qdrant-secret-model.md](../infrastructure/docs/qdrant-secret-model.md) — canonical secret contract
+- [../infrastructure/docs/provider-runtime-contract.md](../infrastructure/docs/provider-runtime-contract.md) — canonical runtime contract

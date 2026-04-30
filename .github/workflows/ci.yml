@@ -94,13 +94,13 @@ jobs:
         with:
           filename: reports/coverage.xml
           badge: true
-          fail_below_min: false
+          fail_below_min: true
           format: markdown
           hide_branch_rate: false
           hide_complexity: true
           indicators: true
           output: both
-          thresholds: '10 80'
+          thresholds: '100 100'
 
       - name: Post coverage comment
         if: always() && github.event_name == 'pull_request'

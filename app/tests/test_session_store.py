@@ -44,6 +44,10 @@ class TestUsers:
         result = await store.get_user_by_id("00000000-0000-0000-0000-000000000000")
         assert result is None
 
+    async def test_get_user_by_id_invalid_uuid_returns_none(self, store: SessionStore) -> None:
+        result = await store.get_user_by_id("not-a-uuid")
+        assert result is None
+
     async def test_duplicate_email_raises(self, store: SessionStore) -> None:
         await store.create_user("dup@example.com", "hashed_pw")
         with pytest.raises(asyncpg.UniqueViolationError):
@@ -73,6 +77,17 @@ class TestSessions:
         result = await store.get_session("no-such-session")
         assert result is None
 
+    async def test_unconnected_store_raises_on_pool_access(self) -> None:
+        unconnected = SessionStore("postgresql://user:pass@postgres:5432/movie_finder")
+
+        with pytest.raises(RuntimeError, match=r"SessionStore\.connect"):
+            _ = unconnected._p
+
+    async def test_close_unconnected_store_is_noop(self) -> None:
+        unconnected = SessionStore("postgresql://user:pass@postgres:5432/movie_finder")
+
+        await unconnected.close()
+
     async def test_update_session_phase(self, store: SessionStore) -> None:
         uid = await self._user(store)
         session = await store.create_session(uid)
@@ -80,6 +95,9 @@ class TestSessions:
         updated = await store.get_session(session["id"])
         assert updated is not None
         assert updated["phase"] == "confirmation"
+
+    async def test_update_session_phase_invalid_uuid_is_noop(self, store: SessionStore) -> None:
+        await store.update_session_phase("not-a-uuid", "qa")
 
     async def test_get_or_create_creates_new_session(self, store: SessionStore) -> None:
         uid = await self._user(store)
@@ -107,6 +125,14 @@ class TestGetSessions:
     async def test_returns_empty_for_new_user(self, store: SessionStore) -> None:
         uid = await self._user(store)
         assert await store.get_sessions(uid, limit=20, offset=0) == {
+            "total": 0,
+            "limit": 20,
+            "offset": 0,
+            "items": [],
+        }
+
+    async def test_invalid_user_id_returns_empty_page(self, store: SessionStore) -> None:
+        assert await store.get_sessions("not-a-uuid", limit=20, offset=0) == {
             "total": 0,
             "limit": 20,
             "offset": 0,
@@ -208,6 +234,9 @@ class TestConfirmedMovie:
         assert session is not None
         assert session["confirmed_movie"] == data
 
+    async def test_set_confirmed_movie_invalid_uuid_is_noop(self, store: SessionStore) -> None:
+        await store.set_confirmed_movie("not-a-uuid", {"imdb_id": "tt1375666"})
+
     async def test_confirmed_movie_returned_in_get_sessions(self, store: SessionStore) -> None:
         user = await store.create_user("cm2@example.com", "pw")
         uid = user.id
@@ -260,6 +289,18 @@ class TestDeleteSession:
     async def test_delete_nonexistent_session_is_noop(self, store: SessionStore) -> None:
         """Deleting a session that doesn't exist should not raise."""
         await store.delete_session("no-such-session")
+
+    async def test_append_message_invalid_uuid_is_noop(self, store: SessionStore) -> None:
+        await store.append_message("not-a-uuid", "user", "Hello")
+
+    async def test_get_messages_invalid_uuid_returns_empty(self, store: SessionStore) -> None:
+        assert await store.get_messages("not-a-uuid") == []
+
+    async def test_parse_uuid_rejects_invalid_values(self) -> None:
+        from app.session.store import _parse_uuid
+
+        with pytest.raises(ValueError, match="Invalid UUID value"):
+            _parse_uuid("not-a-uuid")
 
 
 class TestRefreshTokenBlocklist:
